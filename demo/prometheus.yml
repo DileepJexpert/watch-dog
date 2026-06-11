@@ -1,0 +1,38 @@
+# Prometheus config for the "local Spring Boot app" scenario.
+# Scrapes:
+#   1. WATCHDOG backend's own metrics
+#   2. Your Spring Boot app on the HOST (via host.docker.internal)
+#
+# If your app runs on a different port, change the target below or override
+# APM_HOST_PORT in the compose file.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  - job_name: 'watchdog-backend'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['watchdog-backend:8080']
+        labels:
+          service: watchdog-backend
+
+  # === Your local Spring Boot app ===
+  # Requires:
+  #   - spring-boot-starter-actuator + micrometer-registry-prometheus
+  #   - management.endpoints.web.exposure.include: prometheus,health,info,metrics
+  - job_name: 'local-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          # Important: WATCHDOG's correlation rules key off the `service` label.
+          # Set this to whatever you want your app to be called in the dashboard.
+          service: my-spring-boot-app
+          app: my-spring-boot-app
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

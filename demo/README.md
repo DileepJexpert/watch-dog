@@ -1,5 +1,19 @@
 # WATCHDOG local demo
 
+Two scenarios, depending on what you're testing.
+
+| Scenario | What you want to verify | Use |
+|---|---|---|
+| **A** — pure WATCHDOG, synthetic data | The platform itself: ingestion + correlation + dashboard + AI Copilot | the root `docker-compose.yml` + this README's scenarios 1–4 |
+| **B** — monitor *your* Spring Boot app | WATCHDOG sees logs/traces/metrics from a real app running on your laptop | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` |
+
+If you got here looking for "how do I point WATCHDOG at my own Spring Boot
+app?", jump to **Scenario B** at the bottom.
+
+---
+
+## Scenario A — pure WATCHDOG with synthetic data
+
 End-to-end walkthrough for verifying — on your laptop, with Docker — that:
 
 1. WATCHDOG is up and the infra it depends on (Postgres, Redis, Kafka, Elasticsearch, Jaeger, Prometheus, Grafana) is reachable
@@ -188,3 +202,120 @@ LlmClient abstraction (FR-1) is the only seam.
 | Agent answer has empty evidence | mock LLM in use AND seed-error-logs hasn't run | run `./demo/seed-error-logs.sh` first |
 | `host.docker.internal` not resolvable | Linux without docker-desktop | add `--add-host=host.docker.internal:host-gateway` or use the host's bridge IP |
 | Flyway error about `vector` extension | pgvector not installed | the V6 migration swallows this — verify `agent_audit` (V7) and `knowledge_doc` (V6) both exist |
+
+---
+
+## Scenario B — monitor your local Spring Boot app
+
+This uses a different compose file (`demo/docker-compose.local-app.yml`) that:
+- runs Kibana / Grafana / Jaeger / Prometheus / ES / WATCHDOG **in Docker**
+- expects **your** Spring Boot app to run **on the host machine**
+- runs **Filebeat** to ship logs written by your app to ES
+- enables **Jaeger OTLP** (ports 4317/4318) so your app's OpenTelemetry agent can send traces
+- configures Prometheus to scrape your app at `host.docker.internal:8080/actuator/prometheus`
+
+### Step 1 — bring up the observability stack
+
+```bash
+cd /path/to/watch-dog
+mkdir -p logs
+
+# Optional: enable the AI Copilot up-front
+cat > demo/.env <<'EOF'
+AGENT_ENABLED=true
+LLM_BASE_URL=https://api.anthropic.com
+LLM_API_KEY=sk-ant-...
+LLM_MODEL=claude-opus-4-7
+EOF
+
+docker compose -f demo/docker-compose.local-app.yml up -d --build
+```
+
+Endpoints exposed on `localhost`:
+
+| Service           | URL                                    |
+|-------------------|----------------------------------------|
+| WATCHDOG UI       | <http://localhost:3000>                |
+| WATCHDOG backend  | <http://localhost:8080>                |
+| Kibana            | <http://localhost:5601>                |
+| Jaeger UI         | <http://localhost:16686>               |
+| Grafana           | <http://localhost:3001> (admin/watchdog) |
+| Prometheus        | <http://localhost:9090>                |
+| Elasticsearch     | <http://localhost:9200>                |
+| Jaeger OTLP HTTP  | <http://localhost:4318>                |
+| Jaeger OTLP gRPC  | localhost:4317                         |
+
+### Step 2 — instrument your Spring Boot app
+
+Follow `demo/spring-boot-app-setup.md`. Minimum: add `micrometer-registry-prometheus`,
+add the Logback JSON encoder writing to `./logs/`, run with the OpenTelemetry
+Java agent. All three are config-only.
+
+### Step 3 — start your app from the repo root
+
+```bash
+cd /path/to/watch-dog       # so ./logs is the same directory Filebeat watches
+mkdir -p logs
+
+java -javaagent:./opentelemetry-javaagent.jar \
+     -Dotel.service.name=my-spring-boot-app \
+     -Dotel.exporter.otlp.endpoint=http://localhost:4318 \
+     -Dotel.exporter.otlp.protocol=http/protobuf \
+     -Dotel.traces.exporter=otlp \
+     -Dotel.metrics.exporter=none \
+     -Dotel.logs.exporter=none \
+     -jar /path/to/your-app.jar
+```
+
+### Step 4 — verify each signal arrives
+
+```bash
+./demo/check.sh
+
+# Specifically:
+# logs   → curl 'http://localhost:9200/logs-*/_count'           (should grow)
+# metrics → open http://localhost:9090/targets                   (local-app UP)
+#         OR curl 'localhost:9090/api/v1/query?query=jvm_memory_used_bytes{service="my-spring-boot-app"}'
+# traces → open http://localhost:16686 → Service: my-spring-boot-app
+# dashboard → open http://localhost:3000 → see your service appear in Service Health Map
+```
+
+### Step 5 — drive a synthetic incident from your app
+
+Hit an endpoint that logs ERRORs, or just add this to your app temporarily:
+
+```java
+@GetMapping("/break-it")
+public String breakIt() {
+    for (int i = 0; i < 30; i++) {
+        log.error("synthetic DB pool exhaustion #{}", i,
+                  new RuntimeException("simulated JDBC connection timeout"));
+    }
+    return "OK";
+}
+```
+
+```bash
+curl localhost:8080/break-it      # or whatever port your app uses
+sleep 35
+./demo/check.sh                    # WATCHDOG should now show an OPEN incident
+```
+
+### Step 6 — ask the AI Copilot about *your* service
+
+```bash
+./demo/ask-agent.sh "what's wrong with my-spring-boot-app right now?"
+```
+
+…or open the **AI Copilot** tab at <http://localhost:3000>.
+
+### Common gotchas (Scenario B)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Prometheus `local-app` target DOWN | host port mismatch | edit `demo/prometheus.yml` and the `APM_HOST_PORT` env in `demo/docker-compose.local-app.yml`, then `docker compose -f demo/docker-compose.local-app.yml restart prometheus watchdog-backend` |
+| `host.docker.internal` not resolvable | older Docker on Linux | already aliased via `extra_hosts: host-gateway` in the compose — verify with `docker exec watchdog-backend getent hosts host.docker.internal` |
+| Filebeat reports `Permission denied` on `/host-logs` | host file perms too tight | `chmod -R a+r ./logs` |
+| No `service.name` on log entries in ES | logback custom field not picked up | check `customFields` in the encoder config — must include `service.name` |
+| Traces never appear in Jaeger | OTel exporter pointed at the wrong port | confirm `-Dotel.exporter.otlp.endpoint=http://localhost:4318` and `COLLECTOR_OTLP_ENABLED=true` in the jaeger service |
+| WATCHDOG doesn't tie metrics to your service | inconsistent service name across signals | the label / resource attr / customField must all be the same string (default `my-spring-boot-app`) — see the cheat sheet at the end of `spring-boot-app-setup.md` |
