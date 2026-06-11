@@ -1,0 +1,14 @@
+# Auto-provisions Prometheus as datasource #1.
+# WATCHDOG's GrafanaConnector queries via /api/datasources/proxy/1/api/v1/query,
+# so this must be the first datasource Grafana sees.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    uid: prometheus-default

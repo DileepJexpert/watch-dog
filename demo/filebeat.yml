@@ -1,0 +1,46 @@
+# Filebeat ships JSON log lines written by your local Spring Boot app
+# into Elasticsearch using the ECS-aligned `logs-YYYY.MM.DD` index that
+# WATCHDOG's ElasticsearchConnector polls.
+#
+# Expected on the host: ./logs/*.json — one JSON document per line.
+# See ./spring-boot-app-setup.md for the Logback encoder snippet that
+# produces the right shape.
+
+filebeat.inputs:
+  - type: filestream
+    id: local-app-json
+    enabled: true
+    paths:
+      - /host-logs/*.json
+      - /host-logs/**/*.json
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
+          overwrite_keys: true
+          expand_keys: true
+
+# Map the JSON fields ECS-style. The Logback encoder example writes the keys
+# already in the right shape, so this is mostly a passthrough — but we add
+# `service.name` from a static field if your encoder doesn't emit one.
+processors:
+  - add_fields:
+      target: ""
+      fields:
+        # Override the value in compose env if you run multiple apps.
+        service.name: my-spring-boot-app
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  # Daily rollover into logs-YYYY.MM.DD — matches the index-pattern WATCHDOG polls.
+  index: "logs-%{+yyyy.MM.dd}"
+
+# Disable the default ILM that wants to use a managed index name.
+setup.ilm.enabled: false
+setup.template.name: "logs"
+setup.template.pattern: "logs-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+
+logging.level: info
