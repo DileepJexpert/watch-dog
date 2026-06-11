@@ -1,5 +1,6 @@
 package com.watchdog.correlation;
 
+import com.watchdog.agent.RcaService;
 import com.watchdog.alerting.AlertingService;
 import com.watchdog.config.KafkaConfig;
 import com.watchdog.model.NormalizedEvent;
@@ -14,6 +15,7 @@ import com.watchdog.repository.IncidentRepository;
 import com.watchdog.repository.ServiceHealthRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,6 +44,10 @@ public class CorrelationEngine {
     private final AutoRemediationEngine autoRemediationEngine;
     private final EventNormalizationService normalizationService;
     private final SimpMessagingTemplate messagingTemplate;
+
+    /** Optional — only present when the AI layer is enabled (FR-7). */
+    @Autowired(required = false)
+    private RcaService rcaService;
 
     /**
      * Consumes normalized events from Kafka and adds to sliding window.
@@ -104,6 +110,16 @@ public class CorrelationEngine {
 
         // Trigger auto-remediation
         autoRemediationEngine.remediate(saved);
+
+        // FR-7: optional LLM-assisted RCA pass. Async + best-effort; never blocks
+        // or affects the deterministic alerting/remediation path above.
+        if (rcaService != null) {
+            try {
+                rcaService.analyze(saved);
+            } catch (Exception e) {
+                log.debug("RCA dispatch failed (non-fatal): {}", e.getMessage());
+            }
+        }
     }
 
     private void updateServiceHealth(NormalizedEvent event) {

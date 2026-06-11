@@ -6,6 +6,7 @@ import { ErrorRateTrend } from './components/ErrorRateTrend';
 import { LatencyHeatmap } from './components/LatencyHeatmap';
 import { RemediationLog } from './components/RemediationLog';
 import { RuleBuilder } from './components/RuleBuilder';
+import { AgentConsole } from './components/AgentConsole';
 import { useWebSocket } from './hooks/useWebSocket';
 import {
   ServiceHealth, Incident, RemediationLog as RemediationLogType, DashboardStats
@@ -14,7 +15,7 @@ import {
 const WATCHDOG_API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const POLL_INTERVAL = 30_000;
 
-type Tab = 'dashboard' | 'incidents' | 'remediation' | 'rules';
+type Tab = 'dashboard' | 'incidents' | 'remediation' | 'rules' | 'agent';
 
 export default function App() {
   const { connected, latestIncident } = useWebSocket();
@@ -104,7 +105,7 @@ export default function App() {
       {/* Navigation */}
       <nav className="bg-gray-900 border-b border-gray-800 px-6">
         <div className="flex gap-1">
-          {(['dashboard', 'incidents', 'remediation', 'rules'] as Tab[]).map(tab => (
+          {(['dashboard', 'incidents', 'remediation', 'rules', 'agent'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -114,7 +115,7 @@ export default function App() {
                   : 'text-gray-400 border-transparent hover:text-gray-300'
               }`}
             >
-              {tab}
+              {tab === 'agent' ? 'AI Copilot' : tab}
             </button>
           ))}
         </div>
@@ -161,6 +162,10 @@ export default function App() {
           <div className="max-w-2xl">
             <RuleBuilder />
           </div>
+        )}
+
+        {activeTab === 'agent' && (
+          <AgentConsole />
         )}
       </main>
     </div>

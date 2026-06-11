@@ -8,7 +8,10 @@ import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -103,6 +106,39 @@ public class KubernetesClientWrapper {
             log.error("Failed to rollback deployment {}/{}: {}", namespace, deploymentName, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Read-only pod status snapshot used by the agent's pod_status tool.
+     * Returns one map per matching pod with phase, restart count, and container readiness.
+     */
+    public List<Map<String, Object>> listPodStatus(String namespace, String appLabel) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try {
+            var query = appLabel == null || appLabel.isBlank()
+                    ? client.pods().inNamespace(namespace)
+                    : client.pods().inNamespace(namespace).withLabel("app", appLabel);
+            for (Pod pod : query.list().getItems()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("name", pod.getMetadata().getName());
+                row.put("namespace", pod.getMetadata().getNamespace());
+                row.put("phase", pod.getStatus() == null ? null : pod.getStatus().getPhase());
+                if (pod.getStatus() != null && pod.getStatus().getContainerStatuses() != null) {
+                    int totalRestarts = pod.getStatus().getContainerStatuses().stream()
+                            .mapToInt(cs -> cs.getRestartCount() == null ? 0 : cs.getRestartCount())
+                            .sum();
+                    long ready = pod.getStatus().getContainerStatuses().stream()
+                            .filter(cs -> Boolean.TRUE.equals(cs.getReady())).count();
+                    row.put("restartCount", totalRestarts);
+                    row.put("containersReady", ready);
+                    row.put("containersTotal", pod.getStatus().getContainerStatuses().size());
+                }
+                out.add(row);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to list pods for {}/{}: {}", namespace, appLabel, e.getMessage());
+        }
+        return out;
     }
 
     /**
