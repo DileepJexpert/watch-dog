@@ -145,3 +145,49 @@ watchdog:
     z-score-threshold: 3.0
     retraining-interval-hours: 24
     min-samples-for-detection: 30
+
+  # AI layer master switches (FR-8: defaults are safe / advisory-only)
+  agent:
+    enabled: ${AGENT_ENABLED:false}
+    mode: ${AGENT_MODE:advisory}
+    max-steps: ${AGENT_MAX_STEPS:8}
+    history-max-messages: ${AGENT_HISTORY_MAX:20}
+    proactive-scan-interval-seconds: ${AGENT_PROACTIVE_SCAN_SECONDS:0}
+    rca-on-correlation: ${AGENT_RCA_ON_CORRELATION:false}
+    redaction:
+      enabled: ${AGENT_REDACTION_ENABLED:true}
+
+  # Model endpoint configuration (FR-1: env-driven, no code change to swap providers)
+  aihub:
+    provider: ${LLM_PROVIDER:anthropic}
+    base-url: ${LLM_BASE_URL:}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:}
+    max-tokens: ${LLM_MAX_TOKENS:2000}
+    timeout-ms: ${LLM_TIMEOUT_MS:30000}
+    anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}
+
+  # Knowledge base / RAG configuration (FR-4)
+  knowledge:
+    embedding-model: ${KNOWLEDGE_EMBEDDING_MODEL:}
+    embedding-base-url: ${KNOWLEDGE_EMBEDDING_BASE_URL:}
+    embedding-api-key: ${KNOWLEDGE_EMBEDDING_API_KEY:}
+    embedding-dimension: ${KNOWLEDGE_EMBEDDING_DIMENSION:1024}
+    top-k: ${KNOWLEDGE_TOP_K:5}
+    # set true once pgvector extension is provisioned (FR-4); falls back to in-memory cosine otherwise
+    pgvector-enabled: ${KNOWLEDGE_PGVECTOR_ENABLED:false}
+
+  # Read-only target DB connections for query_database tool (FR-5)
+  db-targets:
+    targets: []
+    # Example (configure via env in deployments):
+    # - name: payments-readonly
+    #   url: jdbc:postgresql://payments-replica:5432/payments
+    #   username: ${PAYMENTS_RO_USER:}
+    #   password: ${PAYMENTS_RO_PASSWORD:}
+
+  # Runtime / APM metrics source for get_runtime_metrics tool (FR-5)
+  apm:
+    url: ${APM_URL:}
+    api-key: ${APM_API_KEY:}
+    actuator-targets: []

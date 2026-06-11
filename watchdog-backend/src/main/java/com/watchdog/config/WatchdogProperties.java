@@ -20,6 +20,11 @@ public class WatchdogProperties {
     private AlertingConfig alerting = new AlertingConfig();
     private RemediationConfig remediation = new RemediationConfig();
     private AnomalyConfig anomaly = new AnomalyConfig();
+    private AgentConfig agent = new AgentConfig();
+    private AihubConfig aihub = new AihubConfig();
+    private KnowledgeConfig knowledge = new KnowledgeConfig();
+    private DbTargetsConfig dbTargets = new DbTargetsConfig();
+    private ApmConfig apm = new ApmConfig();
 
     @Data
     public static class ElasticsearchConfig {
@@ -115,5 +120,74 @@ public class WatchdogProperties {
         private double zScoreThreshold = 3.0;
         private int retrainingIntervalHours = 24;
         private int minSamplesForDetection = 30;
+    }
+
+    @Data
+    public static class AgentConfig {
+        private boolean enabled = false;
+        private String mode = "advisory";
+        private int maxSteps = 8;
+        private int historyMaxMessages = 20;
+        private int proactiveScanIntervalSeconds = 0;
+        private boolean rcaOnCorrelation = false;
+        private RedactionConfig redaction = new RedactionConfig();
+
+        @Data
+        public static class RedactionConfig {
+            private boolean enabled = true;
+            private List<String> patterns = new ArrayList<>(List.of(
+                    "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b",
+                    "\\b\\d{12,19}\\b",
+                    "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+                    "(?i)\\b(bearer|token|api[_-]?key|password|secret)\\s*[:=]\\s*\\S+"
+            ));
+            private List<String> blockedFields = new ArrayList<>(List.of(
+                    "password", "secret", "token", "apiKey", "api_key", "authorization"
+            ));
+        }
+    }
+
+    @Data
+    public static class AihubConfig {
+        private String provider = "anthropic";
+        private String baseUrl = "";
+        private String apiKey = "";
+        private String model = "";
+        private int maxTokens = 2000;
+        private long timeoutMs = 30_000;
+        private String anthropicVersion = "2023-06-01";
+    }
+
+    @Data
+    public static class KnowledgeConfig {
+        private String embeddingModel = "";
+        private String embeddingBaseUrl = "";
+        private String embeddingApiKey = "";
+        private int embeddingDimension = 1024;
+        private int topK = 5;
+        private boolean pgvectorEnabled = false;
+    }
+
+    @Data
+    public static class DbTargetsConfig {
+        private List<Target> targets = new ArrayList<>();
+
+        @Data
+        public static class Target {
+            private String name;
+            private String url;
+            private String username = "";
+            private String password = "";
+            private String driverClassName = "org.postgresql.Driver";
+            private int queryRowLimit = 200;
+            private int queryTimeoutSeconds = 5;
+        }
+    }
+
+    @Data
+    public static class ApmConfig {
+        private String url = "";
+        private String apiKey = "";
+        private List<String> actuatorTargets = new ArrayList<>();
     }
 }

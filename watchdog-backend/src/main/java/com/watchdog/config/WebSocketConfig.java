@@ -21,5 +21,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint("/ws/events")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
+        // FR-3: agent streams step-by-step progress on this endpoint; same broker, separate URL
+        registry.addEndpoint("/ws/agent")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
     }
 }
