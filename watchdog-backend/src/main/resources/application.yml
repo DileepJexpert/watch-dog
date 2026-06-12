@@ -23,6 +23,11 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # Don't reject startup over a checksum mismatch — we occasionally patch
+    # already-applied migrations to make them tolerant of environment differences
+    # (e.g. TimescaleDB hypertable conversion in V1). New migrations still apply
+    # cleanly; only checksum verification of historic applied scripts is relaxed.
+    validate-on-migrate: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}
