@@ -193,8 +193,9 @@ services:
   # ──────────────────────────────────────────────────────────────────────
   watchdog-backend:
     build:
-      context: ../watchdog-backend
-      dockerfile: Dockerfile
+      # Build context is the repo root so Maven can resolve the multi-module parent pom.
+      context: ..
+      dockerfile: watchdog-backend/Dockerfile
     container_name: watchdog-backend
     <<: *host-extra
     depends_on:
@@ -233,7 +234,6 @@ services:
   watchdog-frontend:
     build:
       context: ../watchdog-frontend
-      dockerfile: Dockerfile
     container_name: watchdog-frontend
     depends_on: [watchdog-backend]
     ports: ["3000:80"]

@@ -1,16 +1,45 @@
-# WATCHDOG local demo
+# WATCHDOG — two ways to run it
 
-Two scenarios, depending on what you're testing.
+```
+                  ┌─────────────────────────────┐
+                  │  Pick your run mode         │
+                  └──────────┬──────────────────┘
+                             │
+        ┌────────────────────┴───────────────────┐
+        │                                        │
+        ▼                                        ▼
+┌──────────────────────┐                  ┌──────────────────────┐
+│  LOCAL DEV (IDE)     │                  │  PIPELINE / FULL DOCKER│
+│                      │                  │                      │
+│  Infra in docker,    │                  │  Everything in docker,│
+│  watchdog-backend +  │                  │  including watchdog. │
+│  frontend in your    │                  │                      │
+│  IDE (F5 / npm run)  │                  │  What CI runs.       │
+│                      │                  │                      │
+│  Best for: reading   │                  │  Best for: shipping, │
+│  the code, setting   │                  │  reproducible boot,  │
+│  breakpoints,        │                  │  smoke testing.      │
+│  hot-reload          │                  │                      │
+└──────────────────────┘                  └──────────────────────┘
+        │                                        │
+        ▼                                        ▼
+demo/docker-compose.infra-only.yml          docker-compose.yml  (repo root)
++ run backend with mvn spring-boot:run      (no extra steps)
++ run frontend with npm run dev
+```
 
-| Scenario | What you want to verify | Use |
+Both modes are first-class — pick whichever fits the task, switch any time.
+
+| Scenario | Use this | Walkthrough |
 |---|---|---|
-| **A** — pure WATCHDOG, synthetic data | The platform itself: ingestion + correlation + dashboard + AI Copilot | the root `docker-compose.yml` + this README's scenarios 1–4 |
-| **B** — monitor *your* Spring Boot app, WATCHDOG in docker | WATCHDOG sees logs/traces/metrics from a real app running on your laptop, no IDE involved | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` |
-| **C** — run WATCHDOG **from VS Code / IntelliJ** with infra in docker | Debug, hot-reload, breakpoints. Best when you want to read or modify the WATCHDOG code itself. | `demo/docker-compose.infra-only.yml` + the **Scenario C** walkthrough at the bottom |
+| **LOCAL DEV** — run WATCHDOG from VS Code / IntelliJ, only infra in docker | `demo/docker-compose.infra-only.yml` | Scenario C below |
+| **PIPELINE / FULL DOCKER** — every container builds and starts via `docker compose up` | root `docker-compose.yml` | Scenario D below |
+| Monitor *your own* Spring Boot app with WATCHDOG also in docker | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` | Scenario B below |
+| Pure WATCHDOG with synthetic data (no real app required) | root `docker-compose.yml` + the seeder scripts | Scenarios 1–4 below |
 
-If you got here looking for "how do I point WATCHDOG at my own Spring Boot
-app?", jump to **Scenario B**. If you want to step through WATCHDOG's own
-code in your IDE, jump to **Scenario C**.
+Where each mode lives in CI:
+- **Backend unit tests** + **frontend build** run on every push (`backend-tests`, `frontend-build` jobs in `.github/workflows/ci.yml`)
+- **Pipeline path** is verified by the `docker-build` and `compose-smoke` jobs, which build both images from the repo-root context and boot the full stack to hit `/actuator/health` and `/api/agent/status`. If those jobs go red, the docker path is broken.
 
 ---
 
@@ -479,8 +508,102 @@ curl http://localhost:8080/api/dashboard/incidents/active | python3 -m json.tool
 
 ### Why this avoids the Dockerfile build error
 
-The error you hit (`Non-resolvable parent POM ... watchdog-parent ... 'parent.relativePath' points at wrong local POM`)
-is from `watchdog-backend/Dockerfile` trying to `mvn dependency:go-offline`
-without the multi-module parent context being copied into the build. Scenario C
-doesn't build that image — Maven runs from your IDE / terminal with the full
-project tree available, so the parent pom resolves naturally.
+If you ever did hit `Non-resolvable parent POM ... watchdog-parent ...
+'parent.relativePath' points at wrong local POM`, that came from the old
+`watchdog-backend/Dockerfile` trying `mvn dependency:go-offline` without the
+multi-module parent context copied into the build. Scenario C sidesteps it by
+running Maven from your IDE / terminal with the full project tree available.
+
+The same error is also fixed for **Scenario D** (full docker) — the Dockerfile
+now expects the **repo root** as the build context and copies both `pom.xml`
+(parent) and `watchdog-backend/pom.xml` (child) explicitly, with the build
+contexts in `docker-compose.yml` and `demo/docker-compose.local-app.yml`
+updated to match.
+
+---
+
+## Scenario D — full docker / pipeline path
+
+What CI runs and what you deploy from. Every container is built and started
+by `docker compose`, including `watchdog-backend` and `watchdog-frontend`.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Docker (everything)                                            │
+│                                                                 │
+│  Postgres, Redis, Kafka, ES, Kibana, Jaeger, Prometheus,        │
+│  Grafana                                                        │
+│  + watchdog-backend (built from watchdog-backend/Dockerfile)    │
+│  + watchdog-frontend (built from watchdog-frontend/Dockerfile)  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Bring it up
+
+```bash
+# from repo root
+docker compose up -d --build
+```
+
+The first build takes a few minutes (Maven downloads deps into a cached
+layer). Subsequent builds reuse the cache and finish in seconds.
+
+### Verify
+
+```bash
+# Wait for the backend health endpoint to flip to UP
+curl -fsS http://localhost:8080/actuator/health
+
+# Smoke endpoints
+curl -fsS http://localhost:8080/api/dashboard/summary
+curl -fsS http://localhost:8080/api/agent/status
+
+# Open the UI
+open http://localhost:3000          # backend on :8080, UI on :3000
+```
+
+### Turn on the AI Copilot
+
+In root `docker-compose.yml` add the agent env vars under `watchdog-backend`
+(or pass them via a `.env` file next to the compose):
+
+```yaml
+watchdog-backend:
+  environment:
+    AGENT_ENABLED: "true"
+    LLM_BASE_URL: "https://api.anthropic.com"
+    LLM_API_KEY: "${ANTHROPIC_API_KEY}"
+    LLM_MODEL: "claude-opus-4-7"
+```
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build watchdog-backend
+```
+
+### What CI validates for you
+
+`.github/workflows/ci.yml` runs four jobs on every push to master:
+
+| Job | What it checks |
+|---|---|
+| `backend-tests` | `mvn compile` + AI-layer unit tests pass |
+| `frontend-build` | `npm ci && npm run build` succeeds |
+| `docker-build` | `watchdog-backend/Dockerfile` and `watchdog-frontend/Dockerfile` both build cleanly from the right contexts |
+| `compose-smoke` | `docker compose up -d --build` boots, `/actuator/health` returns 200, and dashboard + agent status endpoints respond |
+
+If `compose-smoke` goes red, the **pipeline path** is broken — surface it
+before the merge.
+
+### When to use Scenario C vs Scenario D
+
+| You want to… | Use |
+|---|---|
+| Step through `AgentOrchestrator.ask(...)` with a debugger | **C** (IDE) |
+| Test a code change in 5 seconds | **C** (IDE) |
+| Build a release-ready image | **D** (docker) |
+| Verify the boot sequence works in CI | **D** (docker) — `compose-smoke` job |
+| Show someone WATCHDOG in 30 seconds with no JDK installed | **D** (docker) |
+| Read the code and follow the request flow | **C** (IDE) |
+
+Both stay green in CI together — switching modes is just changing which
+compose file you point at.
