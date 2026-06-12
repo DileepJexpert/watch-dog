@@ -1,0 +1,75 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "WATCHDOG Backend (advisory mode)",
+      "request": "launch",
+      "mainClass": "com.watchdog.WatchdogApplication",
+      "projectName": "watchdog-backend",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DATABASE_URL": "jdbc:postgresql://localhost:5432/watchdog",
+        "DATABASE_USER": "watchdog",
+        "DATABASE_PASSWORD": "watchdog",
+        "REDIS_HOST": "localhost",
+        "KAFKA_BROKERS": "localhost:9092",
+        "ES_URL": "http://localhost:9200",
+        "JAEGER_URL": "http://localhost:16686",
+        "GRAFANA_URL": "http://localhost:3001",
+        "REMEDIATION_DRY_RUN": "true",
+        "AGENT_ENABLED": "false"
+      }
+    },
+    {
+      "type": "java",
+      "name": "WATCHDOG Backend (AI Copilot ON, mock LLM)",
+      "request": "launch",
+      "mainClass": "com.watchdog.WatchdogApplication",
+      "projectName": "watchdog-backend",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DATABASE_URL": "jdbc:postgresql://localhost:5432/watchdog",
+        "DATABASE_USER": "watchdog",
+        "DATABASE_PASSWORD": "watchdog",
+        "REDIS_HOST": "localhost",
+        "KAFKA_BROKERS": "localhost:9092",
+        "ES_URL": "http://localhost:9200",
+        "JAEGER_URL": "http://localhost:16686",
+        "GRAFANA_URL": "http://localhost:3001",
+        "REMEDIATION_DRY_RUN": "true",
+        "AGENT_ENABLED": "true",
+        "AGENT_MODE": "advisory",
+        "LLM_BASE_URL": "http://localhost:4000",
+        "LLM_API_KEY": "mock",
+        "LLM_MODEL": "mock-claude",
+        "APM_URL": "http://localhost:8081"
+      }
+    },
+    {
+      "type": "java",
+      "name": "WATCHDOG Backend (AI Copilot ON, real Anthropic)",
+      "request": "launch",
+      "mainClass": "com.watchdog.WatchdogApplication",
+      "projectName": "watchdog-backend",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DATABASE_URL": "jdbc:postgresql://localhost:5432/watchdog",
+        "DATABASE_USER": "watchdog",
+        "DATABASE_PASSWORD": "watchdog",
+        "REDIS_HOST": "localhost",
+        "KAFKA_BROKERS": "localhost:9092",
+        "ES_URL": "http://localhost:9200",
+        "JAEGER_URL": "http://localhost:16686",
+        "GRAFANA_URL": "http://localhost:3001",
+        "REMEDIATION_DRY_RUN": "true",
+        "AGENT_ENABLED": "true",
+        "AGENT_MODE": "advisory",
+        "LLM_BASE_URL": "https://api.anthropic.com",
+        "LLM_API_KEY": "${env:ANTHROPIC_API_KEY}",
+        "LLM_MODEL": "claude-opus-4-7",
+        "APM_URL": "http://localhost:8081"
+      }
+    }
+  ]
+}
