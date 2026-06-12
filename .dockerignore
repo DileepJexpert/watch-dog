@@ -1,0 +1,28 @@
+# Keep the build context small so `docker build` doesn't ship every byte to
+# the daemon. Anything matched here is invisible inside the Dockerfile.
+
+**/target/
+**/node_modules/
+**/dist/
+**/.gradle/
+**/build/
+
+# IDE + OS noise
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local runtime state
+logs/
+.env
+.env.*
+
+# Git history (not needed by either Dockerfile)
+.git/
+.gitignore
+
+# Documentation / demo bundle — not needed by the runtime images
+demo/
+README.md

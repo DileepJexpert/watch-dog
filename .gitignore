@@ -26,8 +26,5 @@ Thumbs.db
 *.log
 logs/
 
-# Docker
-.dockerignore
-
 # Kubernetes secrets (never commit real secrets)
 k8s/secrets-production.yaml
