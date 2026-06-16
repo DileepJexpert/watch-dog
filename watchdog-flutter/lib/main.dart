@@ -5,6 +5,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/incidents_screen.dart';
 import 'screens/remediation_screen.dart';
 import 'screens/rules_screen.dart';
+import 'screens/agent_screen.dart';
 
 void main() {
   runApp(const WatchdogApp());
@@ -52,6 +53,7 @@ class _WatchdogHomeState extends State<WatchdogHome> {
     _TabInfo(icon: Icons.warning_amber, label: 'Incidents'),
     _TabInfo(icon: Icons.auto_fix_high, label: 'Remediation'),
     _TabInfo(icon: Icons.rule, label: 'Rules'),
+    _TabInfo(icon: Icons.smart_toy, label: 'AI Copilot'),
   ];
 
   static const _screens = [
@@ -59,6 +61,7 @@ class _WatchdogHomeState extends State<WatchdogHome> {
     IncidentsScreen(),
     RemediationScreen(),
     RulesScreen(),
+    AgentScreen(),
   ];
 
   @override

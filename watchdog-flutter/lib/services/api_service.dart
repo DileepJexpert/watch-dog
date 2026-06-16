@@ -93,6 +93,90 @@ class ApiService {
     }
   }
 
+  // ── AI Copilot endpoints (FR-3) ─────────────────────────────────────────
+
+  Future<AgentStatus> fetchAgentStatus() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/agent/status'));
+    if (response.statusCode == 200) {
+      return AgentStatus.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    if (response.statusCode == 404) {
+      return const AgentStatus(enabled: false, message: 'Agent endpoint not present');
+    }
+    throw ApiException('Failed to fetch agent status: ${response.statusCode}');
+  }
+
+  Future<ModelsResponse> fetchModels() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/agent/models'));
+    if (response.statusCode == 200) {
+      return ModelsResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw ApiException('Failed to fetch models: ${response.statusCode}');
+  }
+
+  Future<void> setActiveModel(String model) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/agent/model'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'model': model}),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('Failed to set model: ${response.statusCode} ${response.body}');
+    }
+  }
+
+  Future<AgentAnswer> askAgent({
+    required String question,
+    required String sessionId,
+    List<Map<String, String>> history = const [],
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/agent/ask'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'question': question,
+        'sessionId': sessionId,
+        'history': history,
+      }),
+    );
+    if (response.statusCode == 200) {
+      return AgentAnswer.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw ApiException('Agent ask failed: ${response.statusCode}');
+  }
+
+  /// Fire-and-forget — backend pushes step/final/error envelopes to
+  /// /topic/agent/{sessionId} which AgentWebSocketService subscribes to.
+  Future<void> startAgentStream({
+    required String question,
+    required String sessionId,
+    List<Map<String, String>> history = const [],
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/agent/ask/stream'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'question': question,
+        'sessionId': sessionId,
+        'history': history,
+      }),
+    );
+    if (response.statusCode != 202 && response.statusCode != 200) {
+      throw ApiException('Agent stream start failed: ${response.statusCode}');
+    }
+  }
+
+  Future<void> ingestKnowledge({required String title, required String content}) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/agent/knowledge'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'title': title, 'content': content}),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('Knowledge ingest failed: ${response.statusCode}');
+    }
+  }
+
   void dispose() {
     _client.close();
   }
