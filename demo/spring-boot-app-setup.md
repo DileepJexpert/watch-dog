@@ -1,6 +1,6 @@
-# Wire your local Spring Boot app to the WATCHDOG stack
+# Wire your local Spring Boot app to the SENTINEL stack
 
-These are the minimum changes your app needs so WATCHDOG can see its **logs**,
+These are the minimum changes your app needs so SENTINEL can see its **logs**,
 **traces**, and **metrics**. All of them are config-only — no code changes.
 
 > Assumes the docker stack from `demo/docker-compose.local-app.yml` is up. From
@@ -42,7 +42,7 @@ management:
         include: prometheus,health,info,metrics
   metrics:
     tags:
-      # IMPORTANT: WATCHDOG's correlation rules key off this label. Use the
+      # IMPORTANT: SENTINEL's correlation rules key off this label. Use the
       # same value you put under `service:` in demo/prometheus.yml.
       service: my-spring-boot-app
       application: my-spring-boot-app
@@ -63,7 +63,7 @@ every 15s. You can watch it pick up your targets at <http://localhost:9090/targe
 
 The compose file runs Filebeat with `./logs:/host-logs:ro` mounted, so anything
 your app writes to `./logs/*.json` is shipped to Elasticsearch under
-`logs-YYYY.MM.DD` (the index pattern WATCHDOG polls).
+`logs-YYYY.MM.DD` (the index pattern SENTINEL polls).
 
 Add the Logstash Logback encoder.
 
@@ -90,7 +90,7 @@ Create `src/main/resources/logback-spring.xml` (or merge into your existing one)
     </encoder>
   </appender>
 
-  <!-- JSON file: one document per line, ECS-aligned for ES + WATCHDOG -->
+  <!-- JSON file: one document per line, ECS-aligned for ES + SENTINEL -->
   <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
     <file>${LOG_DIR}/${APP_NAME}.json</file>
     <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -107,7 +107,7 @@ Create `src/main/resources/logback-spring.xml` (or merge into your existing one)
         <levelValue>[ignore]</levelValue>
       </fieldNames>
       <customFields>{"service.name":"${APP_NAME}","log.level":"INFO"}</customFields>
-      <!-- Promote `level` to `log.level` so WATCHDOG's ES query (which filters
+      <!-- Promote `level` to `log.level` so SENTINEL's ES query (which filters
            on log.level) actually matches. -->
       <provider class="net.logstash.logback.composite.loggingevent.LogLevelJsonProvider">
         <fieldName>log.level</fieldName>
@@ -128,7 +128,7 @@ Create `src/main/resources/logback-spring.xml` (or merge into your existing one)
 Run your app from the **repo root** (so `./logs/` is the same directory the
 compose file mounts):
 ```bash
-cd /path/to/watch-dog
+cd /path/to/sentinel
 mkdir -p logs
 java -jar /path/to/your-app/target/your-app.jar
 # OR
@@ -168,10 +168,10 @@ java \
 Verify in Jaeger UI: <http://localhost:16686> — pick `my-spring-boot-app` from
 the **Service** dropdown.
 
-WATCHDOG polls Jaeger every 60s and surfaces slow / error traces into the same
+SENTINEL polls Jaeger every 60s and surfaces slow / error traces into the same
 correlation engine that processes the logs and metrics.
 
-## 4. Tell WATCHDOG about your service name
+## 4. Tell SENTINEL about your service name
 
 The label / service name must match across the three signals:
 
@@ -181,7 +181,7 @@ The label / service name must match across the three signals:
 | Metrics | `management.metrics.tags.service` in application.yml | `service` label   |
 | Traces  | `-Dotel.service.name=...` JVM flag                | OTel resource attr   |
 
-Keep them identical (e.g. `my-spring-boot-app`) — WATCHDOG's sliding-window
+Keep them identical (e.g. `my-spring-boot-app`) — SENTINEL's sliding-window
 correlation engine groups events by service name. Mismatched names = no
 cross-source correlation.
 
@@ -193,7 +193,7 @@ cross-source correlation.
 ```
 
 You should see:
-- WATCHDOG actuator HTTP 200
+- SENTINEL actuator HTTP 200
 - ES + Kibana + Jaeger + Grafana reachable
 - Your app's ERROR logs counted in the last 5 minutes (if any have fired)
 - `agent` status enabled/disabled per your config
@@ -207,7 +207,7 @@ for (int i = 0; i < 30; i++) {
 }
 ```
 
-Within ~30s WATCHDOG's correlation engine will create an incident — visible
+Within ~30s SENTINEL's correlation engine will create an incident — visible
 at <http://localhost:3000>.
 
 ## 6. Turn on the AI Copilot against this stack
@@ -223,7 +223,7 @@ LLM_API_KEY=sk-ant-...
 LLM_MODEL=claude-opus-4-7
 EOF
 
-docker compose -f demo/docker-compose.local-app.yml up -d --build watchdog-backend
+docker compose -f demo/docker-compose.local-app.yml up -d --build sentinel-backend
 
 # Or use the mock LLM (no creds needed) — see demo/README.md section 3.
 ```

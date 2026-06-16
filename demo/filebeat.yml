@@ -1,6 +1,6 @@
 # Filebeat ships JSON log lines written by your local Spring Boot app
 # into Elasticsearch using the ECS-aligned `logs-YYYY.MM.DD` index that
-# WATCHDOG's ElasticsearchConnector polls.
+# SENTINEL's ElasticsearchConnector polls.
 #
 # Expected on the host: ./logs/*.json — one JSON document per line.
 # See ./spring-boot-app-setup.md for the Logback encoder snippet that
@@ -32,7 +32,7 @@ processors:
 
 output.elasticsearch:
   hosts: ["http://elasticsearch:9200"]
-  # Daily rollover into logs-YYYY.MM.DD — matches the index-pattern WATCHDOG polls.
+  # Daily rollover into logs-YYYY.MM.DD — matches the index-pattern SENTINEL polls.
   index: "logs-%{+yyyy.MM.dd}"
 
 # Disable the default ILM that wants to use a managed index name.

@@ -1,7 +1,7 @@
 # Prometheus config used by BOTH compose files in this folder.
 #
 # Scrapes:
-#   1. The watchdog-backend (whether it runs in the docker-compose.local-app.yml
+#   1. The sentinel-backend (whether it runs in the docker-compose.local-app.yml
 #      stack OR on the host machine via `mvn spring-boot:run`)
 #   2. A sample / user Spring Boot app running on the host
 #
@@ -13,22 +13,22 @@ global:
 
 scrape_configs:
 
-  # WATCHDOG backend — try both the in-network container name AND the host port
+  # SENTINEL backend — try both the in-network container name AND the host port
   # so a single config works for both "all in docker" and "backend in IDE" flows.
-  - job_name: 'watchdog-backend'
+  - job_name: 'sentinel-backend'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['watchdog-backend:8080']
+      - targets: ['sentinel-backend:8080']
         labels:
-          service: watchdog-backend
+          service: sentinel-backend
           source: docker
       - targets: ['host.docker.internal:8080']
         labels:
-          service: watchdog-backend
+          service: sentinel-backend
           source: host
 
   # === Your local Spring Boot app ===
-  # Runs on the HOST machine. Pick a port that doesn't clash with watchdog-backend
+  # Runs on the HOST machine. Pick a port that doesn't clash with sentinel-backend
   # (which uses 8080 by default). The sample app's run.sh allows SERVER_PORT to be
   # overridden; we default it to 8081 in the manual-run walkthrough.
   - job_name: 'local-app'
@@ -36,7 +36,7 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:8081']
         labels:
-          # IMPORTANT: WATCHDOG's correlation rules key off the `service` label.
+          # IMPORTANT: SENTINEL's correlation rules key off the `service` label.
           # Keep this identical to the value in your app's
           # `management.metrics.tags.service` and OTel `service.name`.
           service: my-spring-boot-app

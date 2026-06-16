@@ -1,10 +1,10 @@
-# WATCHDOG — Unified API Monitoring & Auto-Remediation Platform
+# SENTINEL — Unified API Monitoring & Auto-Remediation Platform
 
-> **Codename: WATCHDOG** — Integrating Kibana · Jaeger · Grafana into a Single Intelligent Monitoring Engine
+> **Codename: SENTINEL** — Integrating Kibana · Jaeger · Grafana into a Single Intelligent Monitoring Engine
 
 ## Overview
 
-WATCHDOG is a Java Spring Boot platform that:
+SENTINEL is a Java Spring Boot platform that:
 - **Ingests** data from Elasticsearch/Kibana (logs), Jaeger (traces), and Grafana/Prometheus (metrics)
 - **Correlates** signals across sources using a sliding-window engine with 20 predefined rules
 - **Detects** anomalies using Z-score statistical models
@@ -14,7 +14,7 @@ WATCHDOG is a Java Spring Boot platform that:
 
 ## Business Impact
 
-| Metric | Before (Manual) | With WATCHDOG |
+| Metric | Before (Manual) | With SENTINEL |
 |--------|----------------|---------------|
 | Dedicated monitoring staff | 4–5 FTEs | 0 (on-call model) |
 | Mean time to detect | 15–45 min | &lt; 2 min |
@@ -31,31 +31,31 @@ Layer 4: Action          → Auto-remediation (K8s), alerting, dashboard
 
 ## Quick Start (Docker Compose)
 
-The compose file lives next to the backend code (`watchdog-backend/docker-compose.yml`)
+The compose file lives next to the backend code (`sentinel-backend/docker-compose.yml`)
 so IntelliJ's Services tab can run it from inside the project module.
 
 ```bash
 # Start all services (PostgreSQL, Redis, Kafka, Elasticsearch, Jaeger, Grafana,
-# watchdog-backend, watchdog-frontend)
-cd watchdog-backend
+# sentinel-backend, sentinel-frontend)
+cd sentinel-backend
 docker compose up -d
 
-# Access WATCHDOG Dashboard
+# Access SENTINEL Dashboard
 open http://localhost:3000
 
-# Access WATCHDOG API
+# Access SENTINEL API
 curl http://localhost:8080/api/dashboard/summary
 ```
 
-From IntelliJ: open `watchdog-backend/docker-compose.yml`, click the green ▶
+From IntelliJ: open `sentinel-backend/docker-compose.yml`, click the green ▶
 in the gutter → "Run docker-compose.yml". The Services tool window lets you
 start/stop individual containers.
 
 ## Project Structure
 
 ```
-watchdog-backend/           # Spring Boot 3.x backend
-  src/main/java/com/watchdog/
+sentinel-backend/           # Spring Boot 3.x backend
+  src/main/java/com/sentinel/
     ingestion/              # Elasticsearch, Jaeger, Grafana connectors
     correlation/            # Correlation engine + 20 rules
     intelligence/           # Static rule engine + Z-score anomaly detection
@@ -67,13 +67,13 @@ watchdog-backend/           # Spring Boot 3.x backend
     application.yml         # Configuration
     rules/default-rules.yml # 10 static YAML alert rules
 
-watchdog-frontend/          # React + TypeScript dashboard
+sentinel-frontend/          # React + TypeScript dashboard
   src/
     components/             # ServiceHealthMap, ActiveIncidents, LatencyHeatmap, etc.
     hooks/                  # useWebSocket (real-time updates)
 
 k8s/                              # Kubernetes manifests
-watchdog-backend/docker-compose.yml   # Local development environment (next to backend code)
+sentinel-backend/docker-compose.yml   # Local development environment (next to backend code)
 ```
 
 ## Configuration

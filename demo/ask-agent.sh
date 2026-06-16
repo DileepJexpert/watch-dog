@@ -3,7 +3,7 @@
 # Usage: ./demo/ask-agent.sh "why is payments slow right now?"
 
 set -euo pipefail
-API="${WATCHDOG_API:-http://localhost:8080}"
+API="${SENTINEL_API:-http://localhost:8080}"
 QUESTION="${1:-why is payments slow right now?}"
 SESSION="cli-$(date +%s)"
 

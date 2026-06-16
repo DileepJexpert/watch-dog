@@ -1,0 +1,131 @@
+# SENTINEL Default Alert Rules
+# Static YAML-based rules loaded at startup (complement correlation rules)
+# These evaluate threshold conditions per service
+
+rules:
+  - id: "static-001"
+    name: "Payment Service Error Rate"
+    serviceName: "payment-service"
+    description: "Payment service error rate exceeds 1% for more than 3 minutes"
+    severity: P1_CRITICAL
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: error_rate_percent
+        signalType: METRIC
+        comparator: GTE
+        threshold: 1.0
+        durationMinutes: 3
+
+  - id: "static-002"
+    name: "Order Service High Latency"
+    serviceName: "order-service"
+    description: "Order service P95 latency exceeds 2 seconds"
+    severity: P2_HIGH
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: latency_p95_ms
+        signalType: METRIC
+        comparator: GT
+        threshold: 2000
+
+  - id: "static-003"
+    name: "Global CPU Warning"
+    serviceName: null
+    description: "Any service CPU exceeds 85%"
+    severity: P3_MEDIUM
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: cpu_percent
+        signalType: METRIC
+        comparator: GT
+        threshold: 85.0
+
+  - id: "static-004"
+    name: "Global Memory Warning"
+    serviceName: null
+    description: "Any service memory exceeds 80%"
+    severity: P3_MEDIUM
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: memory_percent
+        signalType: METRIC
+        comparator: GT
+        threshold: 80.0
+
+  - id: "static-005"
+    name: "Auth Service Login Failures"
+    serviceName: "auth-service"
+    description: "High authentication failure rate detected"
+    severity: P2_HIGH
+    enabled: true
+    operator: AND
+    conditions:
+      - signalType: LOG
+        comparator: CONTAINS
+        pattern: "authentication failed"
+
+  - id: "static-006"
+    name: "Database Connection Errors"
+    serviceName: null
+    description: "Database connection errors in any service"
+    severity: P2_HIGH
+    enabled: true
+    operator: AND
+    conditions:
+      - signalType: LOG
+        comparator: CONTAINS
+        pattern: "connection refused"
+
+  - id: "static-007"
+    name: "Inventory Service Stock Alert"
+    serviceName: "inventory-service"
+    description: "Inventory service pod restarts detected"
+    severity: P2_HIGH
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: pod_restarts
+        signalType: METRIC
+        comparator: GTE
+        threshold: 2.0
+
+  - id: "static-008"
+    name: "API Gateway 5xx Rate"
+    serviceName: "api-gateway"
+    description: "API gateway returning >5% 5xx responses"
+    severity: P1_CRITICAL
+    enabled: true
+    operator: AND
+    conditions:
+      - metricName: error_rate_percent
+        signalType: METRIC
+        comparator: GT
+        threshold: 5.0
+
+  - id: "static-009"
+    name: "Service Complete Outage"
+    serviceName: null
+    description: "Service health probe returning connection refused"
+    severity: P1_CRITICAL
+    enabled: true
+    operator: AND
+    conditions:
+      - signalType: PROBE
+        comparator: CONTAINS
+        pattern: "UNREACHABLE"
+
+  - id: "static-010"
+    name: "OOM Log Pattern"
+    serviceName: null
+    description: "OutOfMemoryError detected in any service logs"
+    severity: P2_HIGH
+    enabled: true
+    operator: AND
+    conditions:
+      - signalType: LOG
+        comparator: CONTAINS
+        pattern: "OutOfMemoryError"

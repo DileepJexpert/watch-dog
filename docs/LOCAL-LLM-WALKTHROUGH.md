@@ -1,4 +1,4 @@
-# Run WATCHDOG on your laptop with a LOCAL LLM — step by step
+# Run SENTINEL on your laptop with a LOCAL LLM — step by step
 
 End-to-end walkthrough: spin up Grafana / Kibana / Jaeger / Prometheus in Docker,
 run a sample Spring Boot app on the host, run a local LLM (Ollama), trigger an
@@ -6,7 +6,7 @@ error from the sample app, and watch the AI Copilot diagnose it.
 
 **Total time: ~30 min** (most of which is the first Ollama model pull).
 
-> **No proxy required.** WATCHDOG has a native `OllamaLlmClient` that speaks
+> **No proxy required.** SENTINEL has a native `OllamaLlmClient` that speaks
 > directly to Ollama's `/api/chat` endpoint. You also get a **model dropdown
 > in the UI** populated from `ollama list` — switch models at runtime, no
 > rebuild, no restart.
@@ -35,13 +35,13 @@ error from the sample app, and watch the AI Copilot diagnose it.
   │   │  14b / 7b / etc. │ chat    │  │  :3001     │ │ Postgres │ │ │
   │   │  :11434          │◀────────│  └────────────┘ │ Redis    │ │ │
   │   │                  │         │  ┌──────────────┴──────────┐ │ │
-  │   └──────────────────┘         │  │  WATCHDOG backend       │ │ │
+  │   └──────────────────┘         │  │  SENTINEL backend       │ │ │
   │                                │  │  :8080                  │ │ │
   │                                │  │  OllamaLlmClient        │ │ │
   │                                │  │  + AI Copilot           │ │ │
   │                                │  └─────────────────────────┘ │ │
   │                                │  ┌─────────────────────────┐ │ │
-  │                                │  │  WATCHDOG frontend      │ │ │
+  │                                │  │  SENTINEL frontend      │ │ │
   │                                │  │  :3000  (you open this) │ │ │
   │                                │  │  ← model dropdown here  │ │ │
   │                                │  └─────────────────────────┘ │ │
@@ -92,7 +92,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### Pull one or more models
 
 Pull whichever you want — the UI will list every model you have. Best
-recommendations for tool/function-calling with WATCHDOG's agent:
+recommendations for tool/function-calling with SENTINEL's agent:
 
 ```bash
 # Best for tool-use at 14B — needs ~10 GB RAM, ~10-20s per step
@@ -127,15 +127,15 @@ curl http://localhost:11434/api/chat -d '{
 
 ---
 
-## Step 3 — Start the WATCHDOG + observability stack (Docker)
+## Step 3 — Start the SENTINEL + observability stack (Docker)
 
-> **No proxy needed.** WATCHDOG talks to Ollama directly via
+> **No proxy needed.** SENTINEL talks to Ollama directly via
 > `OllamaLlmClient` (selected by `LLM_PROVIDER=ollama`). You can also pick
 > the active model from a dropdown in the UI — no env-var edits needed
 > to switch.
 
 ```bash
-cd /path/to/watch-dog
+cd /path/to/sentinel
 mkdir -p logs                     # the sample app will write JSON logs here
 ```
 
@@ -168,8 +168,8 @@ APM_HOST_PORT=9090
 "@ | Out-File -FilePath demo\.env -Encoding ascii
 ```
 
-> `host.docker.internal` lets the WATCHDOG container reach Ollama running
-> on your host machine (port 11434). `APM_HOST_PORT=9090` tells WATCHDOG
+> `host.docker.internal` lets the SENTINEL container reach Ollama running
+> on your host machine (port 11434). `APM_HOST_PORT=9090` tells SENTINEL
 > the sample app listens on port 9090 (avoids clashing with the backend on 8080).
 > `LLM_MODEL` is just the initial pick — you can change it from the UI dropdown later.
 
@@ -195,13 +195,13 @@ Open in your browser:
 
 | What | URL | Login |
 |------|-----|-------|
-| WATCHDOG UI | <http://localhost:3000> | none |
+| SENTINEL UI | <http://localhost:3000> | none |
 | Kibana (logs) | <http://localhost:5601> | none |
 | Jaeger (traces) | <http://localhost:16686> | none |
-| Grafana (metrics) | <http://localhost:3001> | admin / watchdog |
+| Grafana (metrics) | <http://localhost:3001> | admin / sentinel |
 | Prometheus | <http://localhost:9090> | none |
 
-The **AI Copilot** tab on the WATCHDOG UI should now say `enabled: true`,
+The **AI Copilot** tab on the SENTINEL UI should now say `enabled: true`,
 `provider: ollama`, and `model: qwen2.5-coder:14b`. There will be a **Model**
 dropdown in the header listing every model from `ollama list` — pick any
 of them and the next agent call uses it.
@@ -413,7 +413,7 @@ ls target/demo-app-*.jar
 Open a **new terminal**:
 
 ```bash
-cd /path/to/watch-dog
+cd /path/to/sentinel
 mkdir -p logs
 
 java \
@@ -461,14 +461,14 @@ If any of these fail, check `./demo/README.md` → Troubleshooting section.
 # Fires 30 ERROR logs with stack traces in one shot
 curl http://localhost:9090/break
 
-# Wait ~35s for the WATCHDOG ingestion poll + correlation tick
+# Wait ~35s for the SENTINEL ingestion poll + correlation tick
 sleep 35
 ```
 
 ### What should happen
 
 1. Filebeat ships the 30 ERROR logs to Elasticsearch (~5s)
-2. WATCHDOG's `ElasticsearchConnector` polls ES every 30s and finds them
+2. SENTINEL's `ElasticsearchConnector` polls ES every 30s and finds them
 3. Events get normalized → Kafka → `CorrelationEngine`
 4. One of the 20 rules fires — likely `HighErrorRateRule` or
    `ConnectionPoolExhaustionRule` (based on the message content)
@@ -551,7 +551,7 @@ You should get back a JSON answer like:
 You ask question
       │
       ▼
-WATCHDOG backend (Docker)
+SENTINEL backend (Docker)
 OllamaLlmClient
       │
       │ HTTP POST /api/chat (native Ollama format)
@@ -560,7 +560,7 @@ Ollama on host:11434
       │
       │ qwen2.5-coder:14b decides which tools to call
       ▼
-Back to WATCHDOG → executes search_logs(), correlate(), etc. in parallel
+Back to SENTINEL → executes search_logs(), correlate(), etc. in parallel
       │
       │ tool outputs sent back as role:tool messages
       ▼
@@ -577,7 +577,7 @@ Returned as FR-9 AgentAnswer
 Every agent run is recorded in `agent_audit`:
 
 ```bash
-docker exec watchdog-postgres psql -U watchdog -d watchdog -c "
+docker exec sentinel-postgres psql -U sentinel -d sentinel -c "
   SELECT id, mode, steps, input_tokens, output_tokens,
          left(answer_summary, 80) AS summary
   FROM agent_audit
@@ -590,7 +590,7 @@ You'll see your run with the step count, token usage, and a snippet of the answe
 To see the full tool-call breakdown:
 
 ```bash
-docker exec watchdog-postgres psql -U watchdog -d watchdog -c "
+docker exec sentinel-postgres psql -U sentinel -d sentinel -c "
   SELECT jsonb_pretty(tool_calls) FROM agent_audit ORDER BY id DESC LIMIT 1;
 "
 ```
@@ -631,9 +631,9 @@ refreshes on page reload.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `/api/agent/status` returns `enabled: false` | env vars not picked up | `docker compose -f demo/docker-compose.local-app.yml --env-file demo/.env up -d watchdog-backend` |
-| `provider: anthropic` in status | forgot `LLM_PROVIDER=ollama` | Add to `demo/.env`, then `docker compose ... up -d watchdog-backend` |
-| Model dropdown empty | Ollama unreachable from container | Verify with `docker exec watchdog-backend curl -sf http://host.docker.internal:11434/api/tags`. On Linux this requires `extra_hosts: host-gateway` (already set in the compose file) |
+| `/api/agent/status` returns `enabled: false` | env vars not picked up | `docker compose -f demo/docker-compose.local-app.yml --env-file demo/.env up -d sentinel-backend` |
+| `provider: anthropic` in status | forgot `LLM_PROVIDER=ollama` | Add to `demo/.env`, then `docker compose ... up -d sentinel-backend` |
+| Model dropdown empty | Ollama unreachable from container | Verify with `docker exec sentinel-backend curl -sf http://host.docker.internal:11434/api/tags`. On Linux this requires `extra_hosts: host-gateway` (already set in the compose file) |
 | Agent answer takes > 2 minutes | local model is slow on first call | First call warms up the model — subsequent calls are faster. Bump `LLM_TIMEOUT_MS=300000` for very large models |
 | Prometheus `local-app` target DOWN | sample app on wrong port | Confirm `server.port: 9090` in the app and `APM_HOST_PORT=9090` in `demo/.env` |
 | No incidents after `/break` | logs not reaching ES | `curl localhost:9200/_cat/indices?v` — confirm `logs-YYYY.MM.DD` exists |

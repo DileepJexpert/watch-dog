@@ -1,7 +1,7 @@
 """
 Mock LLM server speaking the Anthropic /v1/messages envelope.
 
-Lets you exercise the full WATCHDOG agent loop end-to-end without an external
+Lets you exercise the full SENTINEL agent loop end-to-end without an external
 API key. Decisions are heuristic based on the most recent user message:
 
   - First turn: call search_logs + summarize_logs in parallel.

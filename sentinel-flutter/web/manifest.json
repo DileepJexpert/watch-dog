@@ -1,0 +1,9 @@
+{
+  "name": "SENTINEL Dashboard",
+  "short_name": "SENTINEL",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0D1117",
+  "theme_color": "#3B82F6",
+  "description": "SENTINEL Unified API Monitoring & Auto-Remediation Dashboard"
+}
