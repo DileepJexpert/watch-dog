@@ -31,8 +31,13 @@ Layer 4: Action          → Auto-remediation (K8s), alerting, dashboard
 
 ## Quick Start (Docker Compose)
 
+The compose file lives next to the backend code (`watchdog-backend/docker-compose.yml`)
+so IntelliJ's Services tab can run it from inside the project module.
+
 ```bash
-# Start all services (PostgreSQL, Redis, Kafka, Elasticsearch, Jaeger, Grafana)
+# Start all services (PostgreSQL, Redis, Kafka, Elasticsearch, Jaeger, Grafana,
+# watchdog-backend, watchdog-frontend)
+cd watchdog-backend
 docker compose up -d
 
 # Access WATCHDOG Dashboard
@@ -41,6 +46,10 @@ open http://localhost:3000
 # Access WATCHDOG API
 curl http://localhost:8080/api/dashboard/summary
 ```
+
+From IntelliJ: open `watchdog-backend/docker-compose.yml`, click the green ▶
+in the gutter → "Run docker-compose.yml". The Services tool window lets you
+start/stop individual containers.
 
 ## Project Structure
 
@@ -63,8 +72,8 @@ watchdog-frontend/          # React + TypeScript dashboard
     components/             # ServiceHealthMap, ActiveIncidents, LatencyHeatmap, etc.
     hooks/                  # useWebSocket (real-time updates)
 
-k8s/                        # Kubernetes manifests
-docker-compose.yml          # Local development environment
+k8s/                              # Kubernetes manifests
+watchdog-backend/docker-compose.yml   # Local development environment (next to backend code)
 ```
 
 ## Configuration

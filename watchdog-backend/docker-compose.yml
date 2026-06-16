@@ -132,7 +132,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./k8s/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../k8s/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
       - watchdog-net
@@ -161,7 +161,7 @@ services:
   # ── WATCHDOG Backend ───────────────────────────────────────────────────
   watchdog-backend:
     build:
-      context: ./watchdog-backend
+      context: .
       dockerfile: Dockerfile
     container_name: watchdog-backend
     depends_on:
@@ -191,7 +191,7 @@ services:
   # ── WATCHDOG Frontend ──────────────────────────────────────────────────
   watchdog-frontend:
     build:
-      context: ./watchdog-frontend
+      context: ../watchdog-frontend
     container_name: watchdog-frontend
     depends_on:
       - watchdog-backend

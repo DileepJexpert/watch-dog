@@ -104,6 +104,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Bring up the full stack
+        working-directory: watchdog-backend
         run: docker compose up -d --build
 
       - name: Wait for watchdog-backend to be healthy
@@ -114,7 +115,7 @@ jobs:
             if [ "$code" = "200" ]; then echo "backend up"; exit 0; fi
             echo "waiting for backend (attempt $i, code=$code)…"; sleep 5
           done
-          docker compose logs watchdog-backend
+          docker compose -f watchdog-backend/docker-compose.yml logs watchdog-backend
           exit 1
 
       - name: Hit a couple of public endpoints
@@ -125,4 +126,5 @@ jobs:
 
       - name: Tear down
         if: always()
+        working-directory: watchdog-backend
         run: docker compose down -v
