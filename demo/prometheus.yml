@@ -1,10 +1,11 @@
-# Prometheus config for the "local Spring Boot app" scenario.
-# Scrapes:
-#   1. WATCHDOG backend's own metrics
-#   2. Your Spring Boot app on the HOST (via host.docker.internal)
+# Prometheus config used by BOTH compose files in this folder.
 #
-# If your app runs on a different port, change the target below or override
-# APM_HOST_PORT in the compose file.
+# Scrapes:
+#   1. The watchdog-backend (whether it runs in the docker-compose.local-app.yml
+#      stack OR on the host machine via `mvn spring-boot:run`)
+#   2. A sample / user Spring Boot app running on the host
+#
+# If your app runs on a different host port, edit the `local-app` target.
 
 global:
   scrape_interval: 15s
@@ -12,24 +13,32 @@ global:
 
 scrape_configs:
 
+  # WATCHDOG backend — try both the in-network container name AND the host port
+  # so a single config works for both "all in docker" and "backend in IDE" flows.
   - job_name: 'watchdog-backend'
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['watchdog-backend:8080']
         labels:
           service: watchdog-backend
+          source: docker
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: watchdog-backend
+          source: host
 
   # === Your local Spring Boot app ===
-  # Requires:
-  #   - spring-boot-starter-actuator + micrometer-registry-prometheus
-  #   - management.endpoints.web.exposure.include: prometheus,health,info,metrics
+  # Runs on the HOST machine. Pick a port that doesn't clash with watchdog-backend
+  # (which uses 8080 by default). The sample app's run.sh allows SERVER_PORT to be
+  # overridden; we default it to 8081 in the manual-run walkthrough.
   - job_name: 'local-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['host.docker.internal:8081']
         labels:
-          # Important: WATCHDOG's correlation rules key off the `service` label.
-          # Set this to whatever you want your app to be called in the dashboard.
+          # IMPORTANT: WATCHDOG's correlation rules key off the `service` label.
+          # Keep this identical to the value in your app's
+          # `management.metrics.tags.service` and OTel `service.name`.
           service: my-spring-boot-app
           app: my-spring-boot-app
 

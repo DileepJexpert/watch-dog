@@ -233,7 +233,6 @@ services:
   watchdog-frontend:
     build:
       context: ../watchdog-frontend
-      dockerfile: Dockerfile
     container_name: watchdog-frontend
     depends_on: [watchdog-backend]
     ports: ["3000:80"]

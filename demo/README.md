@@ -1,14 +1,45 @@
-# WATCHDOG local demo
+# WATCHDOG — two ways to run it
 
-Two scenarios, depending on what you're testing.
+```
+                  ┌─────────────────────────────┐
+                  │  Pick your run mode         │
+                  └──────────┬──────────────────┘
+                             │
+        ┌────────────────────┴───────────────────┐
+        │                                        │
+        ▼                                        ▼
+┌──────────────────────┐                  ┌──────────────────────┐
+│  LOCAL DEV (IDE)     │                  │  PIPELINE / FULL DOCKER│
+│                      │                  │                      │
+│  Infra in docker,    │                  │  Everything in docker,│
+│  watchdog-backend +  │                  │  including watchdog. │
+│  frontend in your    │                  │                      │
+│  IDE (F5 / npm run)  │                  │  What CI runs.       │
+│                      │                  │                      │
+│  Best for: reading   │                  │  Best for: shipping, │
+│  the code, setting   │                  │  reproducible boot,  │
+│  breakpoints,        │                  │  smoke testing.      │
+│  hot-reload          │                  │                      │
+└──────────────────────┘                  └──────────────────────┘
+        │                                        │
+        ▼                                        ▼
+demo/docker-compose.infra-only.yml          docker-compose.yml  (repo root)
++ run backend with mvn spring-boot:run      (no extra steps)
++ run frontend with npm run dev
+```
 
-| Scenario | What you want to verify | Use |
+Both modes are first-class — pick whichever fits the task, switch any time.
+
+| Scenario | Use this | Walkthrough |
 |---|---|---|
-| **A** — pure WATCHDOG, synthetic data | The platform itself: ingestion + correlation + dashboard + AI Copilot | the root `docker-compose.yml` + this README's scenarios 1–4 |
-| **B** — monitor *your* Spring Boot app | WATCHDOG sees logs/traces/metrics from a real app running on your laptop | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` |
+| **LOCAL DEV** — run WATCHDOG from VS Code / IntelliJ, only infra in docker | `demo/docker-compose.infra-only.yml` | Scenario C below |
+| **PIPELINE / FULL DOCKER** — every container builds and starts via `docker compose up` | root `docker-compose.yml` | Scenario D below |
+| Monitor *your own* Spring Boot app with WATCHDOG also in docker | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` | Scenario B below |
+| Pure WATCHDOG with synthetic data (no real app required) | root `docker-compose.yml` + the seeder scripts | Scenarios 1–4 below |
 
-If you got here looking for "how do I point WATCHDOG at my own Spring Boot
-app?", jump to **Scenario B** at the bottom.
+Where each mode lives in CI:
+- **Backend unit tests** + **frontend build** run on every push (`backend-tests`, `frontend-build` jobs in `.github/workflows/ci.yml`)
+- **Pipeline path** is verified by the `docker-build` and `compose-smoke` jobs, which build both images from the repo-root context and boot the full stack to hit `/actuator/health` and `/api/agent/status`. If those jobs go red, the docker path is broken.
 
 ---
 
@@ -319,3 +350,260 @@ sleep 35
 | No `service.name` on log entries in ES | logback custom field not picked up | check `customFields` in the encoder config — must include `service.name` |
 | Traces never appear in Jaeger | OTel exporter pointed at the wrong port | confirm `-Dotel.exporter.otlp.endpoint=http://localhost:4318` and `COLLECTOR_OTLP_ENABLED=true` in the jaeger service |
 | WATCHDOG doesn't tie metrics to your service | inconsistent service name across signals | the label / resource attr / customField must all be the same string (default `my-spring-boot-app`) — see the cheat sheet at the end of `spring-boot-app-setup.md` |
+
+---
+
+## Scenario C — run WATCHDOG from VS Code / IntelliJ (infra in docker)
+
+Best when you want to **step through WATCHDOG's own code**, set breakpoints,
+or make changes and see them reload immediately. Only the supporting infra
+(Postgres, Redis, Kafka, ES, Kibana, Jaeger, Prometheus, Grafana, Filebeat)
+runs in Docker. The watchdog-backend and watchdog-frontend run **from your IDE**.
+
+```
+┌──────────────┐  ┌────────────────────────────────┐
+│  Your VS Code│  │  Docker (infra only)           │
+│              │  │                                │
+│  watchdog-   │─▶│  Postgres, Redis, Kafka, ES,   │
+│  backend     │  │  Kibana, Jaeger, Prometheus,   │
+│  (mvn s-b:run│  │  Grafana, Filebeat              │
+│   or F5)     │  │                                │
+│              │  └────────────────────────────────┘
+│  watchdog-   │
+│  frontend    │
+│  (npm run dev)│
+└──────────────┘
+```
+
+### One-time setup
+
+```bash
+git pull                                # make sure parent pom has the Lombok fix
+mkdir -p logs                           # Filebeat watches this directory
+```
+
+### Step 1 — start the infra (Docker)
+
+```bash
+docker compose -f demo/docker-compose.infra-only.yml up -d
+```
+
+That's it for Docker. The `watchdog-backend` and `watchdog-frontend` images
+do NOT build — none of those Dockerfile errors (parent pom resolution, etc.)
+can happen here.
+
+Wait ~30 seconds for Elasticsearch's healthcheck to flip green:
+```bash
+docker compose -f demo/docker-compose.infra-only.yml ps
+# all should show "Up" or "healthy"
+```
+
+### Step 2 — run the WATCHDOG backend from VS Code
+
+**Option A — one-key debug (recommended):**
+1. Open the `watch-dog/` repo folder in VS Code.
+2. Copy the tracked launch + extensions config into the gitignored `.vscode/`:
+   ```bash
+   mkdir -p .vscode
+   cp demo/vscode-config/launch.json     .vscode/launch.json
+   cp demo/vscode-config/extensions.json .vscode/extensions.json
+   ```
+3. When prompted, install the recommended extensions (`Extension Pack for Java`,
+   `Spring Boot Dashboard`, etc.).
+4. Open the **Run and Debug** panel (Ctrl+Shift+D / Cmd+Shift+D).
+5. Pick one of the pre-built configs from the dropdown:
+   - `WATCHDOG Backend (advisory mode)` — AI Copilot off
+   - `WATCHDOG Backend (AI Copilot ON, mock LLM)` — uses `./demo/mock-llm.py`
+   - `WATCHDOG Backend (AI Copilot ON, real Anthropic)` — needs `ANTHROPIC_API_KEY` env var on your shell
+6. Hit F5. Breakpoints, hot reload, and the **Spring Boot Dashboard** all work.
+
+**Option B — Maven from the terminal:**
+```bash
+cd watchdog-backend
+mvn spring-boot:run \
+  -Dspring-boot.run.jvmArguments="\
+    -DDATABASE_URL=jdbc:postgresql://localhost:5432/watchdog \
+    -DREDIS_HOST=localhost \
+    -DKAFKA_BROKERS=localhost:9092 \
+    -DES_URL=http://localhost:9200 \
+    -DJAEGER_URL=http://localhost:16686 \
+    -DGRAFANA_URL=http://localhost:3001"
+```
+
+Or set the env vars in your shell first and just run `mvn spring-boot:run`.
+
+The backend will be at <http://localhost:8080>. Hit:
+```bash
+curl localhost:8080/actuator/health    # should return UP
+curl localhost:8080/api/dashboard/summary
+```
+
+> If you start `mock-llm.py` in another terminal first and pick the
+> `AI Copilot ON, mock LLM` launch config, the agent layer comes up live.
+
+### Step 3 — run the WATCHDOG frontend from VS Code
+
+```bash
+cd watchdog-frontend
+npm install     # first time only
+npm run dev
+```
+
+Vite serves the UI at <http://localhost:5173>. It talks to the backend at
+<http://localhost:8080> via `VITE_API_URL` (defaults correctly when running
+locally — set `VITE_API_URL=http://localhost:8080` in `.env.local` if you
+need to override).
+
+Open <http://localhost:5173>:
+- **Dashboard** tab — service health map, active incidents
+- **AI Copilot** tab — if you ran backend with `AGENT_ENABLED=true`, the chat works here
+
+### Step 4 — connect your Spring Boot app (sample or real)
+
+Run your app on **port 8081** (so it doesn't clash with watchdog-backend on
+8080) from the repo root:
+
+```bash
+cd /path/to/watch-dog       # so ./logs is what Filebeat watches
+SERVER_PORT=8081 ./path/to/your-app/run.sh
+# or for the sample:
+SERVER_PORT=8081 ./watchdog-sample-app/run.sh
+```
+
+Verify each signal:
+```bash
+# metrics — Prometheus should show local-app target UP
+open http://localhost:9090/targets
+
+# logs — Filebeat should be shipping
+curl 'http://localhost:9200/logs-*/_count?q=service.name:my-spring-boot-app'
+
+# traces — open the Jaeger UI and pick my-spring-boot-app
+open http://localhost:16686
+```
+
+### Step 5 — drive an incident, then ask the agent
+
+```bash
+# From your app — fire 30 fake DB-pool errors
+curl 'http://localhost:8081/break/db-pool?count=30'
+
+# Wait ~30s for the next ES poll cycle, then verify the incident
+curl http://localhost:8080/api/dashboard/incidents/active | python3 -m json.tool
+
+# Ask the agent (works with any launch config that has AI Copilot ON)
+./demo/ask-agent.sh "what's wrong with my-spring-boot-app right now?"
+```
+
+### Scenario C cheat sheet
+
+| What | Where it runs | Command |
+|---|---|---|
+| Infra (Postgres, Redis, Kafka, ES, Kibana, Jaeger, Prometheus, Grafana, Filebeat) | Docker | `docker compose -f demo/docker-compose.infra-only.yml up -d` |
+| watchdog-backend | **VS Code F5** OR terminal | `mvn -pl watchdog-backend spring-boot:run` |
+| watchdog-frontend | terminal | `cd watchdog-frontend && npm run dev` |
+| Your Spring Boot app | terminal | `SERVER_PORT=8081 ./path/to/run.sh` |
+| Mock LLM (no API key) | terminal | `python3 demo/mock-llm.py` |
+| Tear down infra | Docker | `docker compose -f demo/docker-compose.infra-only.yml down` |
+
+### Why this avoids the Dockerfile build error
+
+If you ever did hit `Non-resolvable parent POM ... watchdog-parent ...
+'parent.relativePath' points at wrong local POM`, that came from the old
+`watchdog-backend/Dockerfile` trying `mvn dependency:go-offline` without the
+multi-module parent context copied into the build. Scenario C sidesteps it by
+running Maven from your IDE / terminal with the full project tree available.
+
+The same error is also fixed for **Scenario D** (full docker) — the Dockerfile
+now expects the **repo root** as the build context and copies both `pom.xml`
+(parent) and `watchdog-backend/pom.xml` (child) explicitly, with the build
+contexts in `docker-compose.yml` and `demo/docker-compose.local-app.yml`
+updated to match.
+
+---
+
+## Scenario D — full docker / pipeline path
+
+What CI runs and what you deploy from. Every container is built and started
+by `docker compose`, including `watchdog-backend` and `watchdog-frontend`.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Docker (everything)                                            │
+│                                                                 │
+│  Postgres, Redis, Kafka, ES, Kibana, Jaeger, Prometheus,        │
+│  Grafana                                                        │
+│  + watchdog-backend (built from watchdog-backend/Dockerfile)    │
+│  + watchdog-frontend (built from watchdog-frontend/Dockerfile)  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Bring it up
+
+```bash
+# from repo root
+docker compose up -d --build
+```
+
+The first build takes a few minutes (Maven downloads deps into a cached
+layer). Subsequent builds reuse the cache and finish in seconds.
+
+### Verify
+
+```bash
+# Wait for the backend health endpoint to flip to UP
+curl -fsS http://localhost:8080/actuator/health
+
+# Smoke endpoints
+curl -fsS http://localhost:8080/api/dashboard/summary
+curl -fsS http://localhost:8080/api/agent/status
+
+# Open the UI
+open http://localhost:3000          # backend on :8080, UI on :3000
+```
+
+### Turn on the AI Copilot
+
+In root `docker-compose.yml` add the agent env vars under `watchdog-backend`
+(or pass them via a `.env` file next to the compose):
+
+```yaml
+watchdog-backend:
+  environment:
+    AGENT_ENABLED: "true"
+    LLM_BASE_URL: "https://api.anthropic.com"
+    LLM_API_KEY: "${ANTHROPIC_API_KEY}"
+    LLM_MODEL: "claude-opus-4-7"
+```
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build watchdog-backend
+```
+
+### What CI validates for you
+
+`.github/workflows/ci.yml` runs four jobs on every push to master:
+
+| Job | What it checks |
+|---|---|
+| `backend-tests` | `mvn compile` + AI-layer unit tests pass |
+| `frontend-build` | `npm ci && npm run build` succeeds |
+| `docker-build` | `watchdog-backend/Dockerfile` and `watchdog-frontend/Dockerfile` both build cleanly from the right contexts |
+| `compose-smoke` | `docker compose up -d --build` boots, `/actuator/health` returns 200, and dashboard + agent status endpoints respond |
+
+If `compose-smoke` goes red, the **pipeline path** is broken — surface it
+before the merge.
+
+### When to use Scenario C vs Scenario D
+
+| You want to… | Use |
+|---|---|
+| Step through `AgentOrchestrator.ask(...)` with a debugger | **C** (IDE) |
+| Test a code change in 5 seconds | **C** (IDE) |
+| Build a release-ready image | **D** (docker) |
+| Verify the boot sequence works in CI | **D** (docker) — `compose-smoke` job |
+| Show someone WATCHDOG in 30 seconds with no JDK installed | **D** (docker) |
+| Read the code and follow the request flow | **C** (IDE) |
+
+Both stay green in CI together — switching modes is just changing which
+compose file you point at.

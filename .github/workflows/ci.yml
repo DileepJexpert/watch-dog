@@ -1,0 +1,128 @@
+name: CI
+
+# Runs on every push and PR. Two parallel jobs:
+#   1. backend-tests  — JDK + Maven unit tests (no Docker needed)
+#   2. docker-build   — verifies the all-in-docker path actually builds
+#                       (the path you take when running WATCHDOG in a pipeline)
+#
+# Both must pass before a PR can land. Local-dev (IDE) and pipeline (docker)
+# stay validated side by side.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  backend-tests:
+    name: Backend tests (Maven, JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Compile
+        working-directory: watchdog-backend
+        run: mvn -B -DskipTests clean compile
+
+      - name: Run unit tests for the AI layer
+        working-directory: watchdog-backend
+        run: |
+          mvn -B test \
+            -Dtest='AnthropicLlmClientTest,OllamaLlmClientTest,PiiRedactorTest,KnowledgeServiceTest,DatabaseConnectorTest'
+
+  frontend-build:
+    name: Frontend build (Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: watchdog-frontend/package-lock.json
+
+      - name: Install
+        working-directory: watchdog-frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        working-directory: watchdog-frontend
+        run: npm run build
+
+  docker-build:
+    name: Docker images (pipeline path)
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 1. Validates that the backend Dockerfile builds against the
+      #    single-module flat layout (build context = ./watchdog-backend).
+      - name: Build watchdog-backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: watchdog-backend
+          file: watchdog-backend/Dockerfile
+          push: false
+          tags: watchdog-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 2. Validates the frontend production bundle builds in CI.
+      - name: Build watchdog-frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: watchdog-frontend
+          push: false
+          tags: watchdog-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  compose-smoke:
+    name: docker-compose smoke (full stack boots)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bring up the full stack
+        run: docker compose up -d --build
+
+      - name: Wait for watchdog-backend to be healthy
+        run: |
+          set -e
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/actuator/health || echo 000)
+            if [ "$code" = "200" ]; then echo "backend up"; exit 0; fi
+            echo "waiting for backend (attempt $i, code=$code)…"; sleep 5
+          done
+          docker compose logs watchdog-backend
+          exit 1
+
+      - name: Hit a couple of public endpoints
+        run: |
+          curl -fsS http://localhost:8080/api/dashboard/summary
+          curl -fsS http://localhost:8080/api/dashboard/stats
+          curl -fsS http://localhost:8080/api/agent/status
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

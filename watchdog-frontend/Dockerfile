@@ -1,9 +1,13 @@
+# Multi-stage build for watchdog-frontend. Build context is watchdog-frontend/.
+
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package.json .
-RUN npm install --frozen-lockfile
+# 1. Lockfile-aware install for reproducible CI builds.
+COPY package.json package-lock.json* ./
+RUN npm ci --no-audit --no-fund
 
+# 2. Build the production bundle.
 COPY . .
 RUN npm run build
 
