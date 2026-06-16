@@ -29,8 +29,11 @@ public class OllamaModelService {
 
     public List<Map<String, Object>> listInstalled() {
         if (!"ollama".equalsIgnoreCase(properties.getAihub().getProvider())) {
+            log.debug("[ollama/models] provider={} != ollama, returning empty list", properties.getAihub().getProvider());
             return List.of();
         }
+        long startNs = System.nanoTime();
+        log.debug("[ollama/models] → GET {}/api/tags", properties.getAihub().getBaseUrl());
         try {
             JsonNode response = llmWebClient.get()
                     .uri("/api/tags")
@@ -57,9 +60,13 @@ public class OllamaModelService {
                 }
                 out.add(entry);
             }
+            log.info("[ollama/models] ← {} model(s) in {}ms: {}",
+                    out.size(), (System.nanoTime() - startNs) / 1_000_000,
+                    out.stream().map(e -> e.get("name")).toList());
             return out;
         } catch (Exception e) {
-            log.warn("Failed to list Ollama models: {}", e.getMessage());
+            log.warn("[ollama/models] FAILED in {}ms: {}",
+                    (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
             return List.of();
         }
     }

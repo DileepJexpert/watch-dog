@@ -1,7 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'package:stomp_dart_client/stomp_dart_client.dart';
 import '../models/models.dart';
+
+void _dbg(String msg) {
+  if (kDebugMode) developer.log(msg, name: 'agent-ws');
+}
 
 /// FR-3 streaming consumer — subscribes to /topic/agent/{sessionId}
 /// for live tool-call updates while the agent works.
@@ -20,16 +26,19 @@ class AgentWebSocketService {
 
   void connect() {
     if (_client != null) return;
+    _dbg('connecting → $url');
     _client = StompClient(
       config: StompConfig.sockJS(
         url: url,
         onConnect: _onConnect,
         onDisconnect: _onDisconnect,
         onWebSocketError: (e) {
+          _dbg('socket error: $e');
           _setConnected(false);
           _scheduleReconnect();
         },
         onStompError: (frame) {
+          _dbg('STOMP error: ${frame.body}');
           _setConnected(false);
           _scheduleReconnect();
         },
@@ -39,6 +48,7 @@ class AgentWebSocketService {
   }
 
   void _onConnect(StompFrame frame) {
+    _dbg('connected — re-attaching ${_subs.length} subscription(s)');
     _setConnected(true);
     _reconnectTimer?.cancel();
     for (final sub in _subs.values) {
@@ -47,6 +57,7 @@ class AgentWebSocketService {
   }
 
   void _onDisconnect(StompFrame frame) {
+    _dbg('disconnected');
     _setConnected(false);
     _scheduleReconnect();
   }
@@ -73,6 +84,7 @@ class AgentWebSocketService {
     void Function(AgentStreamEnvelope) onEnvelope,
   ) {
     final destination = '/topic/agent/$sessionId';
+    _dbg('subscribe → $destination (connected=$_connected)');
     final sub = _ActiveSubscription(destination, onEnvelope);
     _subs[destination] = sub;
     if (_connected && _client != null) {

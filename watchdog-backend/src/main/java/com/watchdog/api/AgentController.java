@@ -54,6 +54,9 @@ public class AgentController {
     @PostMapping("/ask")
     public ResponseEntity<AgentAnswer> ask(@RequestBody AgentAskRequest request) {
         String sessionId = request.sessionId() == null ? UUID.randomUUID().toString() : request.sessionId();
+        log.debug("[api/ask] sync session={} historySize={} question='{}'",
+                sessionId, request.history() == null ? 0 : request.history().size(),
+                request.question() == null ? "" : request.question());
         AgentAnswer answer = orchestrator.ask(sessionId, request.question(), request.history());
         return ResponseEntity.ok(answer);
     }
@@ -62,18 +65,27 @@ public class AgentController {
     public ResponseEntity<Map<String, String>> askStream(@RequestBody AgentAskRequest request) {
         String sessionId = request.sessionId() == null ? UUID.randomUUID().toString() : request.sessionId();
         String topic = "/topic/agent/" + sessionId;
+        log.debug("[api/ask/stream] session={} topic={} historySize={} question='{}'",
+                sessionId, topic, request.history() == null ? 0 : request.history().size(),
+                request.question() == null ? "" : request.question());
 
         CompletableFuture.runAsync(() -> {
             try {
                 AgentAnswer answer = orchestrator.ask(sessionId, request.question(), request.history(),
-                        step -> messagingTemplate.convertAndSend(topic, Map.of(
-                                "type", "step",
-                                "payload", step)));
+                        step -> {
+                            log.debug("[ws/agent] → step session={} step={} toolCalls={}",
+                                    sessionId, step.get("step"), step.get("toolCalls"));
+                            messagingTemplate.convertAndSend(topic, Map.of(
+                                    "type", "step",
+                                    "payload", step));
+                        });
+                log.debug("[ws/agent] → final session={} summary={} chars",
+                        sessionId, answer == null || answer.summary() == null ? 0 : answer.summary().length());
                 messagingTemplate.convertAndSend(topic, Map.of(
                         "type", "final",
                         "payload", answer));
             } catch (Exception e) {
-                log.error("Stream ask failed: {}", e.getMessage(), e);
+                log.error("[ws/agent] → error session={} : {}", sessionId, e.getMessage(), e);
                 messagingTemplate.convertAndSend(topic, Map.of(
                         "type", "error",
                         "payload", Map.of("message", e.getMessage() == null ? "unknown error" : e.getMessage())));
@@ -127,10 +139,12 @@ public class AgentController {
     @PostMapping("/model")
     public ResponseEntity<Map<String, Object>> setModel(@RequestBody Map<String, String> body) {
         String model = body.get("model");
+        log.debug("[api/model] switch requested → {}", model);
         if (model == null || model.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "model is required"));
         }
         if (!"ollama".equalsIgnoreCase(properties.getAihub().getProvider())) {
+            log.debug("[api/model] rejected — provider={} (only ollama supported)", properties.getAihub().getProvider());
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Runtime model switching is only supported when provider=ollama. "
                             + "For Anthropic providers, set LLM_MODEL via env vars."));

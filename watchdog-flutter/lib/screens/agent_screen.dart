@@ -1,8 +1,15 @@
+import 'dart:developer' as developer;
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/agent_websocket_service.dart';
+
+void _dbg(String msg) {
+  // kDebugMode only fires in `flutter run` (debug) builds — release builds stay silent.
+  if (kDebugMode) developer.log(msg, name: 'agent');
+}
 
 /// FR-3 conversational console — Flutter parity with React's AgentConsole.
 ///
@@ -61,14 +68,17 @@ class _AgentScreenState extends State<AgentScreen> {
   }
 
   Future<void> _refreshStatus() async {
+    _dbg('GET /api/agent/status');
     try {
       final status = await _api.fetchAgentStatus();
+      _dbg('status ← enabled=${status.enabled} provider=${status.provider} model=${status.model}');
       if (!mounted) return;
       setState(() => _status = status);
       if (status.enabled && status.modelSwitchSupported) {
         _refreshModels();
       }
-    } catch (_) {
+    } catch (e) {
+      _dbg('status fetch failed: $e');
       if (!mounted) return;
       setState(() => _status = const AgentStatus(
             enabled: false,
@@ -78,11 +88,14 @@ class _AgentScreenState extends State<AgentScreen> {
   }
 
   Future<void> _refreshModels() async {
+    _dbg('GET /api/agent/models');
     try {
       final res = await _api.fetchModels();
+      _dbg('models ← ${res.models.length} model(s): ${res.models.map((m) => m.name).join(", ")}');
       if (!mounted) return;
       setState(() => _models = res.models);
-    } catch (_) {
+    } catch (e) {
+      _dbg('models fetch failed: $e');
       if (!mounted) return;
       setState(() => _models = const []);
     }
@@ -91,11 +104,14 @@ class _AgentScreenState extends State<AgentScreen> {
   Future<void> _onModelChange(String? newModel) async {
     if (newModel == null || newModel.isEmpty) return;
     if (newModel == _status.model || _switchingModel) return;
+    _dbg('POST /api/agent/model {from: ${_status.model}, to: $newModel}');
     setState(() => _switchingModel = true);
     try {
       await _api.setActiveModel(newModel);
+      _dbg('model switch OK');
       await _refreshStatus();
     } catch (e) {
+      _dbg('model switch FAILED: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to switch model: $e')),
@@ -130,6 +146,7 @@ class _AgentScreenState extends State<AgentScreen> {
     _scrollToBottom();
     final placeholderIdx = _turns.length - 1;
 
+    _dbg('send session=$_sessionId stream=$_wsConnected historyLen=${history.length} question="$q"');
     if (_wsConnected) {
       _currentSub?.unsubscribe();
       _currentSub = _ws.subscribeToSession(_sessionId, (env) {
@@ -141,17 +158,22 @@ class _AgentScreenState extends State<AgentScreen> {
             try {
               final step = AgentStep.fromJson(
                   Map<String, dynamic>.from(env.payload as Map));
+              _dbg('stream step ${step.step} tools=${step.toolCalls.map((t) => t.name).toList()}');
               turn.steps.add(step);
-            } catch (_) {/* swallow */}
+            } catch (e) {
+              _dbg('step parse failed: $e');
+            }
           } else if (env.isFinal && env.payload is Map) {
             try {
               final answer = AgentAnswer.fromJson(
                   Map<String, dynamic>.from(env.payload as Map));
+              _dbg('stream final summaryLen=${answer.summary.length} evidence=${answer.evidence.length}');
               turn.answer = answer;
               turn.text = answer.summary;
               turn.status = AgentTurnStatus.done;
               _sending = false;
             } catch (e) {
+              _dbg('final parse failed: $e');
               turn.text = 'Failed to parse final answer: $e';
               turn.status = AgentTurnStatus.error;
               _sending = false;
@@ -160,6 +182,7 @@ class _AgentScreenState extends State<AgentScreen> {
             final msg = env.payload is Map
                 ? (env.payload as Map)['message']?.toString() ?? 'Agent error'
                 : 'Agent error';
+            _dbg('stream error: $msg');
             turn.text = msg;
             turn.status = AgentTurnStatus.error;
             _sending = false;
@@ -169,6 +192,7 @@ class _AgentScreenState extends State<AgentScreen> {
       });
 
       try {
+        _dbg('POST /api/agent/ask/stream');
         await _api.startAgentStream(
           question: q,
           sessionId: _sessionId,
@@ -176,17 +200,19 @@ class _AgentScreenState extends State<AgentScreen> {
         );
         Future.delayed(const Duration(minutes: 5), () => _currentSub?.unsubscribe());
         return;
-      } catch (_) {
-        // fall through to sync path
+      } catch (e) {
+        _dbg('stream start failed, falling back to sync: $e');
       }
     }
 
     try {
+      _dbg('POST /api/agent/ask (sync)');
       final answer = await _api.askAgent(
         question: q,
         sessionId: _sessionId,
         history: history,
       );
+      _dbg('sync ← summaryLen=${answer.summary.length} evidence=${answer.evidence.length}');
       if (!mounted) return;
       setState(() {
         if (placeholderIdx < _turns.length) {
@@ -198,6 +224,7 @@ class _AgentScreenState extends State<AgentScreen> {
         _sending = false;
       });
     } catch (e) {
+      _dbg('sync ask FAILED: $e');
       if (!mounted) return;
       setState(() {
         if (placeholderIdx < _turns.length) {

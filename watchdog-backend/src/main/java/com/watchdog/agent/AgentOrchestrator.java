@@ -99,9 +99,14 @@ public class AgentOrchestrator {
                             String question,
                             List<ChatMessage> history,
                             Consumer<Map<String, Object>> stepObserver) {
+        long startNs = System.nanoTime();
         AgentMode mode = AgentMode.parse(properties.getAgent().getMode());
         List<AgentTool> active = activeTools(mode);
         List<ToolSpec> specs = buildToolSpecs(active);
+        log.info("[agent] ask session={} mode={} maxSteps={} historySize={} activeTools={} question='{}'",
+                sessionId, mode, properties.getAgent().getMaxSteps(),
+                history == null ? 0 : history.size(), active.size(),
+                truncate(question, 200));
 
         List<ChatMessage> messages = buildInitialMessages(question, history);
         List<Map<String, Object>> traceLog = new ArrayList<>();
@@ -116,8 +121,23 @@ public class AgentOrchestrator {
         try {
             for (int step = 0; step < maxSteps; step++) {
                 stepsTaken = step + 1;
+                long llmStartNs = System.nanoTime();
+                log.debug("[agent] session={} step={} → LLM call (messages={}, tools={})",
+                        sessionId, stepsTaken, messages.size(), specs.size());
                 LlmResponse response = llmClient.chat(messages, specs, LlmOptions.defaults());
+                long llmMs = (System.nanoTime() - llmStartNs) / 1_000_000;
                 cumulativeUsage = add(cumulativeUsage, response.usage());
+                int callCount = response.toolCalls() == null ? 0 : response.toolCalls().size();
+                log.info("[agent] session={} step={} LLM done in {}ms — text={} chars, toolCalls={}, in/out tokens={}/{}",
+                        sessionId, stepsTaken, llmMs,
+                        response.text() == null ? 0 : response.text().length(),
+                        callCount, response.usage().inputTokens(), response.usage().outputTokens());
+                if (log.isDebugEnabled() && callCount > 0) {
+                    for (ToolCall tc : response.toolCalls()) {
+                        log.debug("[agent]   ↳ tool_call name={} id={} args={}",
+                                tc.name(), tc.id(), tc.args());
+                    }
+                }
 
                 Map<String, Object> stepRecord = new LinkedHashMap<>();
                 stepRecord.put("step", stepsTaken);
@@ -128,6 +148,8 @@ public class AgentOrchestrator {
                 if (stepObserver != null) stepObserver.accept(stepRecord);
 
                 if (!response.hasToolCalls()) {
+                    log.info("[agent] session={} step={} — model returned no tool_calls; treating text as final answer",
+                            sessionId, stepsTaken);
                     answer = fallbackAnswer(response.text(), aggregatedEvidence, traceLog);
                     break;
                 }
@@ -136,6 +158,7 @@ public class AgentOrchestrator {
                         .filter(tc -> FINALIZE_TOOL.equals(tc.name()))
                         .findFirst();
                 if (finalizeCall.isPresent()) {
+                    log.info("[agent] session={} step={} — finalize_answer called, exiting loop", sessionId, stepsTaken);
                     allCalls.add(finalizeCall.get());
                     answer = buildFinalAnswer(finalizeCall.get(), aggregatedEvidence, traceLog);
                     break;
@@ -143,7 +166,11 @@ public class AgentOrchestrator {
 
                 messages.add(ChatMessage.assistant(response.text(), response.toolCalls()));
                 allCalls.addAll(response.toolCalls());
+                long toolStartNs = System.nanoTime();
                 List<ChatMessage> toolResults = executeInParallel(response.toolCalls(), active, aggregatedEvidence);
+                log.info("[agent] session={} step={} ran {} tool(s) in {}ms — evidence so far: {}",
+                        sessionId, stepsTaken, response.toolCalls().size(),
+                        (System.nanoTime() - toolStartNs) / 1_000_000, aggregatedEvidence.size());
                 messages.addAll(toolResults);
             }
 
@@ -158,11 +185,21 @@ public class AgentOrchestrator {
             answer = errorAnswer(e.getMessage(), aggregatedEvidence, traceLog);
             return answer;
         } finally {
+            long totalMs = (System.nanoTime() - startNs) / 1_000_000;
+            log.info("[agent] session={} DONE — steps={} totalMs={} tokens(in/out)={}/{} evidence={} error={}",
+                    sessionId, stepsTaken, totalMs,
+                    cumulativeUsage.inputTokens(), cumulativeUsage.outputTokens(),
+                    aggregatedEvidence.size(), error == null ? "none" : error);
             auditService.record(sessionId, question, answer,
                     mode.name().toLowerCase(),
                     properties.getAihub().getModel(),
                     stepsTaken, cumulativeUsage, allCalls, error);
         }
+    }
+
+    private static String truncate(String s, int n) {
+        if (s == null) return "";
+        return s.length() > n ? s.substring(0, n) + "…" : s;
     }
 
     private List<AgentTool> activeTools(AgentMode mode) {
@@ -269,15 +306,23 @@ public class AgentOrchestrator {
                                 List<AgentEvidence> aggregatedEvidence) {
         AgentTool tool = byName.get(call.name());
         if (tool == null) {
+            log.warn("[tool] unknown tool requested: name='{}' id={}", call.name(), call.id());
             return ChatMessage.tool(call.id(), "{\"error\":\"unknown tool: " + call.name() + "\"}");
         }
+        long startNs = System.nanoTime();
+        log.debug("[tool] → {} id={} args={}", call.name(), call.id(), call.args());
         try {
             AgentTool.ToolResult result = tool.execute(call.args() == null ? Map.of() : call.args());
             Object redactedPayload = redactor.redact(result.payload());
             if (result.evidence() != null) aggregatedEvidence.addAll(result.evidence());
-            return ChatMessage.tool(call.id(), toJson(redactedPayload));
+            String json = toJson(redactedPayload);
+            log.info("[tool] ← {} id={} OK in {}ms — evidence+={}, payload={} chars",
+                    call.name(), call.id(), (System.nanoTime() - startNs) / 1_000_000,
+                    result.evidence() == null ? 0 : result.evidence().size(), json.length());
+            return ChatMessage.tool(call.id(), json);
         } catch (Exception e) {
-            log.warn("Tool {} threw: {}", call.name(), e.getMessage());
+            log.warn("[tool] ← {} id={} FAILED in {}ms: {}",
+                    call.name(), call.id(), (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
             return ChatMessage.tool(call.id(),
                     "{\"error\":\"" + safeJson(e.getMessage()) + "\"}");
         }

@@ -7,6 +7,8 @@ import {
 } from '../types/agent';
 
 const WATCHDOG_API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const DEBUG = import.meta.env.DEV || import.meta.env.VITE_DEBUG_AGENT === 'true';
+const dbg = (...args: unknown[]) => { if (DEBUG) console.debug('[agent]', ...args); };
 
 const confidenceColor = (c?: string) => {
   switch (c) {
@@ -52,15 +54,17 @@ export const AgentConsole: React.FC = () => {
   );
 
   const refreshStatus = () => {
+    dbg('GET /api/agent/status');
     axios.get<AgentStatus>(`${WATCHDOG_API}/api/agent/status`)
-      .then(res => setStatus(res.data))
-      .catch(() => setStatus({ enabled: false, message: 'Agent status endpoint unavailable' }));
+      .then(res => { dbg('status ←', res.data); setStatus(res.data); })
+      .catch(e => { console.warn('[agent] status fetch failed', e); setStatus({ enabled: false, message: 'Agent status endpoint unavailable' }); });
   };
 
   const refreshModels = () => {
+    dbg('GET /api/agent/models');
     axios.get<ModelsResponse>(`${WATCHDOG_API}/api/agent/models`)
-      .then(res => setAvailableModels(res.data.models ?? []))
-      .catch(() => setAvailableModels([]));
+      .then(res => { dbg('models ←', res.data.models?.length ?? 0, 'models'); setAvailableModels(res.data.models ?? []); })
+      .catch(e => { console.warn('[agent] models fetch failed', e); setAvailableModels([]); });
   };
 
   useEffect(() => {
@@ -75,12 +79,14 @@ export const AgentConsole: React.FC = () => {
 
   const onModelChange = async (newModel: string) => {
     if (!newModel || newModel === status?.model || switchingModel) return;
+    dbg('POST /api/agent/model', { from: status?.model, to: newModel });
     setSwitchingModel(true);
     try {
-      await axios.post(`${WATCHDOG_API}/api/agent/model`, { model: newModel });
+      const res = await axios.post(`${WATCHDOG_API}/api/agent/model`, { model: newModel });
+      dbg('model switch ←', res.data);
       refreshStatus();
     } catch (e) {
-      console.error('Failed to switch model', e);
+      console.error('[agent] failed to switch model', e);
     } finally {
       setSwitchingModel(false);
     }
@@ -114,25 +120,30 @@ export const AgentConsole: React.FC = () => {
       .map(t => ({ role: t.role.toUpperCase(), content: t.text }));
 
     const tryStream = connected;
+    dbg('send', { sessionId, tryStream, historyLen: history.length, question });
     if (tryStream) {
       try {
         const sub = subscribeToSession(sessionId, (env: AgentStreamEnvelope) => {
           if (env.type === 'step') {
             const step: AgentStep = env.payload;
+            dbg('stream step', { step: step.step, tools: step.toolCalls?.map(t => t.name) });
             setTurns(prev => prev.map((t, i) => i === placeholderIndex
               ? { ...t, steps: [...(t.steps ?? []), step] } : t));
           } else if (env.type === 'final') {
             const answer: AgentAnswer = env.payload;
+            dbg('stream final', { summaryLen: answer.summary?.length, evidence: answer.evidence?.length });
             setTurns(prev => prev.map((t, i) => i === placeholderIndex
               ? { ...t, answer, text: answer.summary ?? '', status: 'done' } : t));
             setSending(false);
           } else if (env.type === 'error') {
+            console.warn('[agent] stream error', env.payload);
             setTurns(prev => prev.map((t, i) => i === placeholderIndex
               ? { ...t, text: env.payload?.message ?? 'Agent error', status: 'error' } : t));
             setSending(false);
           }
         });
 
+        dbg('POST /api/agent/ask/stream');
         await axios.post(`${WATCHDOG_API}/api/agent/ask/stream`, {
           question, history, sessionId
         });
@@ -140,18 +151,21 @@ export const AgentConsole: React.FC = () => {
         setTimeout(() => sub?.unsubscribe(), 5 * 60_000);
         return;
       } catch (e) {
-        console.warn('streaming failed, falling back to sync', e);
+        console.warn('[agent] streaming failed, falling back to sync', e);
       }
     }
 
     try {
+      dbg('POST /api/agent/ask (sync)');
       const res = await axios.post<AgentAnswer>(`${WATCHDOG_API}/api/agent/ask`, {
         question, history, sessionId
       });
       const answer = res.data;
+      dbg('sync ←', { summaryLen: answer.summary?.length, evidence: answer.evidence?.length });
       setTurns(prev => prev.map((t, i) => i === placeholderIndex
         ? { ...t, answer, text: answer.summary ?? '', status: 'done' } : t));
     } catch (e: any) {
+      console.error('[agent] sync ask failed', e);
       setTurns(prev => prev.map((t, i) => i === placeholderIndex
         ? { ...t, text: e?.message ?? 'Agent error', status: 'error' } : t));
     } finally {

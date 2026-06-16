@@ -158,46 +158,60 @@ services:
     networks:
       - watchdog-net
 
-  # ── WATCHDOG Backend ───────────────────────────────────────────────────
-  watchdog-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: watchdog-backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      kafka:
-        condition: service_started
-    ports:
-      - "8080:8080"
-    environment:
-      DATABASE_URL: jdbc:postgresql://postgres:5432/watchdog
-      DATABASE_USER: watchdog
-      DATABASE_PASSWORD: watchdog
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      KAFKA_BROKERS: kafka:29092
-      ES_URL: http://elasticsearch:9200
-      JAEGER_URL: http://jaeger:16686
-      GRAFANA_URL: http://grafana:3000
-      REMEDIATION_DRY_RUN: "true"
-    networks:
-      - watchdog-net
-    restart: unless-stopped
+  # ──────────────────────────────────────────────────────────────────────
+  # NOTE — watchdog-backend and watchdog-frontend are intentionally COMMENTED
+  # OUT in this file.
+  #
+  # The intent of this compose file is "infra only" — bring up the supporting
+  # services you can't easily run on your laptop (Postgres, Redis, Kafka,
+  # Elasticsearch, Kibana, Jaeger, Prometheus, Grafana) so you can run the
+  # JAVA backend from IntelliJ (debug, breakpoints, hot-reload) and the React
+  # frontend with `npm run dev`.
+  #
+  # If you want the full Docker stack instead, uncomment the two services
+  # below — everything is wired and ready to go.
+  # ──────────────────────────────────────────────────────────────────────
 
-  # ── WATCHDOG Frontend ──────────────────────────────────────────────────
-  watchdog-frontend:
-    build:
-      context: ../watchdog-frontend
-    container_name: watchdog-frontend
-    depends_on:
-      - watchdog-backend
-    ports:
-      - "3000:80"
-    environment:
-      VITE_API_URL: http://localhost:8080
-    networks:
-      - watchdog-net
+  # # ── WATCHDOG Backend ─────────────────────────────────────────────────
+  # watchdog-backend:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: watchdog-backend
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_started
+  #     kafka:
+  #       condition: service_started
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     DATABASE_URL: jdbc:postgresql://postgres:5432/watchdog
+  #     DATABASE_USER: watchdog
+  #     DATABASE_PASSWORD: watchdog
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     KAFKA_BROKERS: kafka:29092
+  #     ES_URL: http://elasticsearch:9200
+  #     JAEGER_URL: http://jaeger:16686
+  #     GRAFANA_URL: http://grafana:3000
+  #     REMEDIATION_DRY_RUN: "true"
+  #   networks:
+  #     - watchdog-net
+  #   restart: unless-stopped
+
+  # # ── WATCHDOG Frontend ────────────────────────────────────────────────
+  # watchdog-frontend:
+  #   build:
+  #     context: ../watchdog-frontend
+  #   container_name: watchdog-frontend
+  #   depends_on:
+  #     - watchdog-backend
+  #   ports:
+  #     - "3000:80"
+  #   environment:
+  #     VITE_API_URL: http://localhost:8080
+  #   networks:
+  #     - watchdog-net

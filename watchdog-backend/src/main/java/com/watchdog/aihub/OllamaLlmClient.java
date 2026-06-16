@@ -32,6 +32,10 @@ public class OllamaLlmClient implements LlmClient {
     public LlmResponse chat(List<ChatMessage> messages, List<ToolSpec> tools, LlmOptions opts) {
         Map<String, Object> body = buildRequestBody(messages, tools, opts);
         long timeoutMs = properties.getAihub().getTimeoutMs();
+        long startNs = System.nanoTime();
+        log.debug("[llm/ollama] → POST {}/api/chat model={} messages={} tools={}",
+                properties.getAihub().getBaseUrl(), body.get("model"),
+                messages.size(), tools == null ? 0 : tools.size());
 
         try {
             JsonNode response = llmWebClient.post()
@@ -43,9 +47,16 @@ public class OllamaLlmClient implements LlmClient {
                     .timeout(Duration.ofMillis(timeoutMs))
                     .block();
 
-            return parseResponse(response);
+            LlmResponse parsed = parseResponse(response);
+            log.debug("[llm/ollama] ← {}ms stop={} tokens={}/{} toolCalls={}",
+                    (System.nanoTime() - startNs) / 1_000_000,
+                    parsed.stopReason(),
+                    parsed.usage().inputTokens(), parsed.usage().outputTokens(),
+                    parsed.toolCalls() == null ? 0 : parsed.toolCalls().size());
+            return parsed;
         } catch (Exception e) {
-            log.error("Ollama call failed: {}", e.getMessage());
+            log.error("[llm/ollama] FAILED in {}ms: {}",
+                    (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
             throw new LlmException("Ollama call failed: " + e.getMessage(), e);
         }
     }
