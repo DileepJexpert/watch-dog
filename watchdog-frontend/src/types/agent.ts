@@ -45,9 +45,25 @@ export interface AgentStatus {
   enabled: boolean;
   mode?: string;
   model?: string;
+  provider?: string;
   baseUrlConfigured?: boolean;
   redactionEnabled?: boolean;
+  modelSwitchSupported?: boolean;
   message?: string;
+}
+
+export interface OllamaModel {
+  name: string;
+  size?: number;
+  family?: string;
+  parameterSize?: string;
+  quantization?: string;
+}
+
+export interface ModelsResponse {
+  provider: string;
+  active: string;
+  models: OllamaModel[];
 }
 
 export interface AgentStreamEnvelope {

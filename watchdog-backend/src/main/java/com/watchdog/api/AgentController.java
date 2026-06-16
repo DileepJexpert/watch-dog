@@ -3,6 +3,7 @@ package com.watchdog.api;
 import com.watchdog.agent.AgentOrchestrator;
 import com.watchdog.agent.dto.AgentAnswer;
 import com.watchdog.agent.dto.AgentAskRequest;
+import com.watchdog.aihub.OllamaModelService;
 import com.watchdog.config.WatchdogProperties;
 import com.watchdog.knowledge.KnowledgeDocEntity;
 import com.watchdog.knowledge.KnowledgeService;
@@ -13,6 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -40,6 +43,7 @@ public class AgentController {
     private final KnowledgeService knowledgeService;
     private final SimpMessagingTemplate messagingTemplate;
     private final WatchdogProperties properties;
+    private final OllamaModelService ollamaModels;
 
     private final ExecutorService streamExecutor = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "agent-stream");
@@ -90,12 +94,50 @@ public class AgentController {
     public ResponseEntity<Map<String, Object>> status() {
         var cfg = properties.getAgent();
         var aihub = properties.getAihub();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", cfg.isEnabled());
+        out.put("mode", cfg.getMode());
+        out.put("maxSteps", cfg.getMaxSteps());
+        out.put("provider", aihub.getProvider());
+        out.put("model", aihub.getModel());
+        out.put("baseUrlConfigured", aihub.getBaseUrl() != null && !aihub.getBaseUrl().isBlank());
+        out.put("redactionEnabled", cfg.getRedaction().isEnabled());
+        out.put("modelSwitchSupported", "ollama".equalsIgnoreCase(aihub.getProvider()));
+        return ResponseEntity.ok(out);
+    }
+
+    /**
+     * Lists locally-installed Ollama models so the UI dropdown can render them.
+     * Returns an empty list when the provider is not Ollama, or when Ollama is
+     * unreachable.
+     */
+    @GetMapping("/models")
+    public ResponseEntity<Map<String, Object>> models() {
+        List<Map<String, Object>> installed = ollamaModels.listInstalled();
         return ResponseEntity.ok(Map.of(
-                "enabled", cfg.isEnabled(),
-                "mode", cfg.getMode(),
-                "maxSteps", cfg.getMaxSteps(),
-                "model", aihub.getModel(),
-                "baseUrlConfigured", aihub.getBaseUrl() != null && !aihub.getBaseUrl().isBlank(),
-                "redactionEnabled", cfg.getRedaction().isEnabled()));
+                "provider", properties.getAihub().getProvider(),
+                "active", properties.getAihub().getModel(),
+                "models", installed));
+    }
+
+    /**
+     * Switches the active model at runtime. Takes effect on the next agent run —
+     * no rebean, no restart. Only meaningful when provider=ollama.
+     */
+    @PostMapping("/model")
+    public ResponseEntity<Map<String, Object>> setModel(@RequestBody Map<String, String> body) {
+        String model = body.get("model");
+        if (model == null || model.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "model is required"));
+        }
+        if (!"ollama".equalsIgnoreCase(properties.getAihub().getProvider())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Runtime model switching is only supported when provider=ollama. "
+                            + "For Anthropic providers, set LLM_MODEL via env vars."));
+        }
+        ollamaModels.setActiveModel(model);
+        return ResponseEntity.ok(Map.of(
+                "active", ollamaModels.getActiveModel(),
+                "message", "Active model updated"));
     }
 }
