@@ -3,7 +3,7 @@ name: CI
 # Runs on every push and PR. Two parallel jobs:
 #   1. backend-tests  — JDK + Maven unit tests (no Docker needed)
 #   2. docker-build   — verifies the all-in-docker path actually builds
-#                       (the path you take when running WATCHDOG in a pipeline)
+#                       (the path you take when running SENTINEL in a pipeline)
 #
 # Both must pass before a PR can land. Local-dev (IDE) and pipeline (docker)
 # stay validated side by side.
@@ -34,11 +34,11 @@ jobs:
           cache: maven
 
       - name: Compile
-        working-directory: watchdog-backend
+        working-directory: sentinel-backend
         run: mvn -B -DskipTests clean compile
 
       - name: Run unit tests for the AI layer
-        working-directory: watchdog-backend
+        working-directory: sentinel-backend
         run: |
           mvn -B test \
             -Dtest='AnthropicLlmClientTest,OllamaLlmClientTest,PiiRedactorTest,KnowledgeServiceTest,DatabaseConnectorTest'
@@ -54,14 +54,14 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: watchdog-frontend/package-lock.json
+          cache-dependency-path: sentinel-frontend/package-lock.json
 
       - name: Install
-        working-directory: watchdog-frontend
+        working-directory: sentinel-frontend
         run: npm ci --no-audit --no-fund
 
       - name: Build
-        working-directory: watchdog-frontend
+        working-directory: sentinel-frontend
         run: npm run build
 
   docker-build:
@@ -75,24 +75,24 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # 1. Validates that the backend Dockerfile builds against the
-      #    single-module flat layout (build context = ./watchdog-backend).
-      - name: Build watchdog-backend image
+      #    single-module flat layout (build context = ./sentinel-backend).
+      - name: Build sentinel-backend image
         uses: docker/build-push-action@v5
         with:
-          context: watchdog-backend
-          file: watchdog-backend/Dockerfile
+          context: sentinel-backend
+          file: sentinel-backend/Dockerfile
           push: false
-          tags: watchdog-backend:ci
+          tags: sentinel-backend:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # 2. Validates the frontend production bundle builds in CI.
-      - name: Build watchdog-frontend image
+      - name: Build sentinel-frontend image
         uses: docker/build-push-action@v5
         with:
-          context: watchdog-frontend
+          context: sentinel-frontend
           push: false
-          tags: watchdog-frontend:ci
+          tags: sentinel-frontend:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,10 +104,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Bring up the full stack
-        working-directory: watchdog-backend
+        working-directory: sentinel-backend
         run: docker compose up -d --build
 
-      - name: Wait for watchdog-backend to be healthy
+      - name: Wait for sentinel-backend to be healthy
         run: |
           set -e
           for i in $(seq 1 60); do
@@ -115,7 +115,7 @@ jobs:
             if [ "$code" = "200" ]; then echo "backend up"; exit 0; fi
             echo "waiting for backend (attempt $i, code=$code)…"; sleep 5
           done
-          docker compose -f watchdog-backend/docker-compose.yml logs watchdog-backend
+          docker compose -f sentinel-backend/docker-compose.yml logs sentinel-backend
           exit 1
 
       - name: Hit a couple of public endpoints
@@ -126,5 +126,5 @@ jobs:
 
       - name: Tear down
         if: always()
-        working-directory: watchdog-backend
+        working-directory: sentinel-backend
         run: docker compose down -v

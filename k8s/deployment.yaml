@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: watchdog-backend
+  name: sentinel-backend
   namespace: monitoring
   labels:
-    app: watchdog-backend
-    component: watchdog
+    app: sentinel-backend
+    component: sentinel
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: watchdog-backend
+      app: sentinel-backend
   template:
     metadata:
       labels:
-        app: watchdog-backend
-        component: watchdog
+        app: sentinel-backend
+        component: sentinel
     spec:
-      serviceAccountName: watchdog-sa
+      serviceAccountName: sentinel-sa
       containers:
-        - name: watchdog-backend
-          image: watchdog/backend:latest
+        - name: sentinel-backend
+          image: sentinel/backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -29,37 +29,37 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: watchdog-secrets
+                  name: sentinel-secrets
                   key: database-url
             - name: DATABASE_USER
               valueFrom:
                 secretKeyRef:
-                  name: watchdog-secrets
+                  name: sentinel-secrets
                   key: database-user
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: watchdog-secrets
+                  name: sentinel-secrets
                   key: database-password
             - name: REDIS_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: watchdog-config
+                  name: sentinel-config
                   key: redis-host
             - name: KAFKA_BROKERS
               valueFrom:
                 configMapKeyRef:
-                  name: watchdog-config
+                  name: sentinel-config
                   key: kafka-brokers
             - name: SLACK_WEBHOOK_URL
               valueFrom:
                 secretKeyRef:
-                  name: watchdog-secrets
+                  name: sentinel-secrets
                   key: slack-webhook-url
             - name: PAGERDUTY_KEY
               valueFrom:
                 secretKeyRef:
-                  name: watchdog-secrets
+                  name: sentinel-secrets
                   key: pagerduty-key
             - name: REMEDIATION_DRY_RUN
               value: "false"
@@ -86,23 +86,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: watchdog-frontend
+  name: sentinel-frontend
   namespace: monitoring
   labels:
-    app: watchdog-frontend
+    app: sentinel-frontend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: watchdog-frontend
+      app: sentinel-frontend
   template:
     metadata:
       labels:
-        app: watchdog-frontend
+        app: sentinel-frontend
     spec:
       containers:
-        - name: watchdog-frontend
-          image: watchdog/frontend:latest
+        - name: sentinel-frontend
+          image: sentinel/frontend:latest
           ports:
             - containerPort: 80
           resources:

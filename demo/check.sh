@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# End-to-end status probe for a local WATCHDOG stack.
+# End-to-end status probe for a local SENTINEL stack.
 # Each section is independent — if one component isn't up, the others still print.
 
 set -u
-API="${WATCHDOG_API:-http://localhost:8080}"
+API="${SENTINEL_API:-http://localhost:8080}"
 ES="${ES_URL:-http://localhost:9200}"
 JAEGER="${JAEGER_URL:-http://localhost:16686}"
 GRAFANA="${GRAFANA_URL:-http://localhost:3001}"
@@ -32,7 +32,7 @@ for i in data:
 bar "AI Copilot status"
 curl -s "${API}/api/agent/status" | python3 -m json.tool 2>/dev/null || echo "(agent endpoint not reachable)"
 
-bar "Recent ERROR logs visible to WATCHDOG (last 5 min)"
+bar "Recent ERROR logs visible to SENTINEL (last 5 min)"
 curl -s -H 'Content-Type: application/json' \
   -X POST "${ES}/logs-*/_search" \
   -d '{"query":{"bool":{"must":[{"term":{"log.level":"ERROR"}},{"range":{"@timestamp":{"gte":"now-5m"}}}]}},"size":0,"aggs":{"by_service":{"terms":{"field":"service.name.keyword","size":10}}}}' \

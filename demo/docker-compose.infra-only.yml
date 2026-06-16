@@ -1,11 +1,11 @@
-# INFRASTRUCTURE ONLY — no WATCHDOG backend or frontend.
+# INFRASTRUCTURE ONLY — no SENTINEL backend or frontend.
 #
-# Use this when you want to run watchdog-backend (`mvn spring-boot:run`) and
-# watchdog-frontend (`npm run dev`) from your IDE / terminal so you can set
+# Use this when you want to run sentinel-backend (`mvn spring-boot:run`) and
+# sentinel-frontend (`npm run dev`) from your IDE / terminal so you can set
 # breakpoints, hot-reload, and step through code.
 #
 # Brings up:
-#   - Postgres, Redis, Kafka (Zookeeper) ── WATCHDOG dependencies
+#   - Postgres, Redis, Kafka (Zookeeper) ── SENTINEL dependencies
 #   - Elasticsearch + Kibana             ── log sink
 #   - Jaeger (OTLP-enabled)              ── trace sink
 #   - Prometheus + Grafana               ── metrics sink
@@ -27,12 +27,12 @@
 #   5432  Postgres        6379  Redis           9092  Kafka
 #   9200  Elasticsearch   5601  Kibana
 #   16686 Jaeger UI       4317  Jaeger OTLP gRPC  4318  Jaeger OTLP HTTP
-#   9090  Prometheus      3001  Grafana (admin/watchdog)
+#   9090  Prometheus      3001  Grafana (admin/sentinel)
 
 version: '3.9'
 
 networks:
-  watchdog-net:
+  sentinel-net:
     driver: bridge
 
 volumes:
@@ -47,39 +47,39 @@ services:
 
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: watchdog-postgres
+    container_name: sentinel-postgres
     environment:
-      POSTGRES_DB: watchdog
-      POSTGRES_USER: watchdog
-      POSTGRES_PASSWORD: watchdog
+      POSTGRES_DB: sentinel
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
     ports: ["5432:5432"]
     volumes: [postgres_data:/var/lib/postgresql/data]
-    networks: [watchdog-net]
+    networks: [sentinel-net]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U watchdog"]
+      test: ["CMD-SHELL", "pg_isready -U sentinel"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: watchdog-redis
+    container_name: sentinel-redis
     ports: ["6379:6379"]
     volumes: [redis_data:/data]
-    networks: [watchdog-net]
+    networks: [sentinel-net]
     command: redis-server --appendonly yes
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.3
-    container_name: watchdog-zookeeper
+    container_name: sentinel-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   kafka:
     image: confluentinc/cp-kafka:7.5.3
-    container_name: watchdog-kafka
+    container_name: sentinel-kafka
     depends_on: [zookeeper]
     ports: ["9092:9092"]
     environment:
@@ -90,18 +90,18 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes: [kafka_data:/var/lib/kafka/data]
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
-    container_name: watchdog-elasticsearch
+    container_name: sentinel-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports: ["9200:9200"]
     volumes: [elasticsearch_data:/usr/share/elasticsearch/data]
-    networks: [watchdog-net]
+    networks: [sentinel-net]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 15s
@@ -110,17 +110,17 @@ services:
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.0
-    container_name: watchdog-kibana
+    container_name: sentinel-kibana
     depends_on:
       elasticsearch: { condition: service_healthy }
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     ports: ["5601:5601"]
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.12.0
-    container_name: watchdog-filebeat
+    container_name: sentinel-filebeat
     user: root
     depends_on:
       elasticsearch: { condition: service_healthy }
@@ -128,11 +128,11 @@ services:
     volumes:
       - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ../logs:/host-logs:ro
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   jaeger:
     image: jaegertracing/all-in-one:1.54
-    container_name: watchdog-jaeger
+    container_name: sentinel-jaeger
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
@@ -141,11 +141,11 @@ services:
       - "14268:14268"   # Jaeger HTTP collector
       - "4317:4317"     # OTLP gRPC
       - "4318:4318"     # OTLP HTTP
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   prometheus:
     image: prom/prometheus:v2.50.0
-    container_name: watchdog-prometheus
+    container_name: sentinel-prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports: ["9090:9090"]
@@ -156,18 +156,18 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
-    networks: [watchdog-net]
+    networks: [sentinel-net]
 
   grafana:
     image: grafana/grafana:10.3.1
-    container_name: watchdog-grafana
+    container_name: sentinel-grafana
     depends_on: [prometheus]
     ports: ["3001:3000"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: watchdog
+      GF_SECURITY_ADMIN_PASSWORD: sentinel
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    networks: [watchdog-net]
+    networks: [sentinel-net]

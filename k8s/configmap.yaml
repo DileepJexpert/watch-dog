@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: watchdog-config
+  name: sentinel-config
   namespace: monitoring
 data:
   redis-host: "redis-master.monitoring.svc.cluster.local"
@@ -17,12 +17,12 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: watchdog-secrets
+  name: sentinel-secrets
   namespace: monitoring
 type: Opaque
 stringData:
-  database-url: "jdbc:postgresql://postgres.monitoring.svc.cluster.local:5432/watchdog"
-  database-user: "watchdog"
+  database-url: "jdbc:postgresql://postgres.monitoring.svc.cluster.local:5432/sentinel"
+  database-user: "sentinel"
   database-password: "REPLACE_WITH_ACTUAL_PASSWORD"
   slack-webhook-url: "REPLACE_WITH_SLACK_WEBHOOK"
   pagerduty-key: "REPLACE_WITH_PAGERDUTY_KEY"

@@ -3,7 +3,7 @@
 # Usage: ./demo/ingest-runbook.sh
 
 set -euo pipefail
-API="${WATCHDOG_API:-http://localhost:8080}"
+API="${SENTINEL_API:-http://localhost:8080}"
 
 cat <<'EOF' | curl -sS -X POST "${API}/api/agent/knowledge" \
   -H 'Content-Type: application/json' --data-binary @- | python3 -m json.tool

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Inject fake ERROR log entries into Elasticsearch so WATCHDOG's
+# Inject fake ERROR log entries into Elasticsearch so SENTINEL's
 # ElasticsearchConnector picks them up on its next poll (every 30s).
 #
 # Usage:   ./demo/seed-error-logs.sh [service] [count]
@@ -45,4 +45,4 @@ curl -sS -H 'Content-Type: application/x-ndjson' \
   -X POST "${ES_URL}/_bulk" --data-binary @"$TMP" \
   | python3 -c 'import sys, json; r = json.load(sys.stdin); print("[seed] errors=", r.get("errors"), "items=", len(r.get("items", [])))'
 
-echo "[seed] done — WATCHDOG will pick these up within ~30s (poll-interval-seconds)"
+echo "[seed] done — SENTINEL will pick these up within ~30s (poll-interval-seconds)"
