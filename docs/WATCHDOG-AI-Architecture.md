@@ -313,18 +313,26 @@ The AI layer is designed so that switching between LLM endpoints is **env-var-on
 
 ### How It Works
 
-All LLM communication goes through a single interface:
+All LLM communication goes through a single interface, with two concrete impls
+selected by `LLM_PROVIDER`:
 
 ```
 LlmClient.chat(messages, tools, options)
        │
-       ▼
-AnthropicLlmClient  ──▶  HTTP POST to ${LLM_BASE_URL}/v1/messages
-                          with header: x-api-key = ${LLM_API_KEY}
-                          body: { model: ${LLM_MODEL}, ... }
+       ├── LLM_PROVIDER=anthropic ──▶ AnthropicLlmClient
+       │                              POST ${LLM_BASE_URL}/v1/messages
+       │                              header: x-api-key = ${LLM_API_KEY}
+       │                              (Anthropic / AWS Bedrock / IDFC AI Hub)
+       │
+       └── LLM_PROVIDER=ollama    ──▶ OllamaLlmClient
+                                      POST ${LLM_BASE_URL}/api/chat
+                                      (native Ollama, no proxy, no key)
+                                      + UI model dropdown
 ```
 
-The `AnthropicLlmClient` speaks the **Anthropic Messages API** envelope (`/v1/messages`). Any endpoint that accepts this format works — Anthropic direct, AWS Bedrock, company-hosted proxies, or local servers that emulate the same API (like Ollama with the Anthropic-compatible endpoint, or LiteLLM proxy).
+The provider is config-driven — no code change to swap. Both clients translate
+the same `ChatMessage` + `ToolSpec` model into the wire format the target
+endpoint expects.
 
 ### Option A: Company-Hosted Model (IDFC AI Hub / Production)
 
@@ -374,62 +382,51 @@ LLM_API_KEY=sk-company-xxxxxxxx
 LLM_MODEL=claude-sonnet-4-20250514
 ```
 
-### Option B: Local Model (Ollama — Test Today on Your Machine)
+### Option B: Local Model (Ollama — Native, No Proxy)
 
-For testing immediately on your local machine with no API key or company access needed:
+For testing immediately on your local machine with no API key or company access needed.
+WATCHDOG ships with a native `OllamaLlmClient` so you can talk to Ollama directly
+and pick any installed model from a UI dropdown.
 
 **Step 1 — Install and run Ollama:**
 
 ```bash
-# Install Ollama (one-time)
-curl -fsSL https://ollama.com/install.sh | sh
+# Install (one-time)
+curl -fsSL https://ollama.com/install.sh | sh   # Linux
+# OR download from https://ollama.com/download  # macOS / Windows
 
-# Pull a model (pick one based on your RAM):
-ollama pull llama3.1        # 8B — needs ~8 GB RAM, fast
-ollama pull mistral         # 7B — needs ~6 GB RAM, fast
-ollama pull codellama       # 7B — good for code analysis
-ollama pull llama3.1:70b    # 70B — needs ~48 GB RAM, best quality
+# Pull one or more models — UI dropdown lists every model you have:
+ollama pull qwen2.5-coder:14b   # Best for tool-use, ~10 GB RAM
+ollama pull qwen2.5-coder:7b    # Lighter, ~7 GB RAM
+ollama pull llama3.2:3b         # Tiny, smoke tests only
 
-# Ollama starts automatically and listens on http://localhost:11434
+# Ollama listens on http://localhost:11434
 ```
 
-**Step 2 — Enable Ollama's OpenAI-compatible endpoint:**
-
-Ollama natively exposes an OpenAI-compatible API at `http://localhost:11434/v1`. To make it work with WATCHDOG's Anthropic-envelope client, run a lightweight proxy:
-
-**Option B1 — Using LiteLLM proxy (recommended, 1 command):**
-
-```bash
-# Install LiteLLM
-pip install litellm[proxy]
-
-# Start proxy — translates Anthropic Messages API → Ollama
-litellm --model ollama/llama3.1 --port 4000 --drop_params
-```
-
-Then set:
+**Step 2 — Set provider=ollama in your env:**
 
 ```bash
 AGENT_ENABLED=true
-LLM_BASE_URL=http://localhost:4000
+AGENT_MODE=advisory
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://localhost:11434          # or http://host.docker.internal:11434 in Docker
 LLM_API_KEY=not-needed
-LLM_MODEL=ollama/llama3.1
+LLM_MODEL=qwen2.5-coder:14b                   # initial pick — switch later from UI
+LLM_TIMEOUT_MS=180000                         # local models are slower
 ```
 
-**Option B2 — Using Ollama's native OpenAI endpoint directly:**
+**Step 3 — Pick a model from the UI:**
 
-If you switch `LLM_PROVIDER` to `openai` (or if a future OpenAI-compatible client is added), point directly:
+Open <http://localhost:3000> → **AI Copilot** tab. The **Model** dropdown
+lists every model `ollama list` returned. Pick any of them — next agent call
+uses it. No restart, no rebuild, no env edit.
 
-```bash
-AGENT_ENABLED=true
-LLM_PROVIDER=anthropic
-LLM_BASE_URL=http://localhost:11434
-LLM_API_KEY=not-needed
-LLM_MODEL=llama3.1
+Backend endpoints powering the dropdown:
 ```
-
-> Note: This requires the local server to accept the Anthropic Messages API format.
-> LiteLLM (Option B1) handles this translation automatically.
+GET  /api/agent/models   → lists installed Ollama models
+POST /api/agent/model    → { "model": "qwen2.5-coder:7b" }
+GET  /api/agent/status   → returns provider + active model
+```
 
 **Spring application-local.yml for local testing:**
 
@@ -440,38 +437,41 @@ watchdog:
     mode: advisory
     max-steps: 4           # lower for faster iteration with local models
   aihub:
-    provider: anthropic
-    base-url: http://localhost:4000    # LiteLLM proxy
+    provider: ollama
+    base-url: http://localhost:11434   # native — no proxy
     api-key: not-needed
-    model: ollama/llama3.1
+    model: qwen2.5-coder:14b
     max-tokens: 2000
-    timeout-ms: 120000                 # local models are slower, increase timeout
+    timeout-ms: 180000     # local models can take longer
 ```
 
 ### Quick-Switch Reference Card
 
-| Setting | Option A: Company AI Hub | Option B: Local (Ollama + LiteLLM) |
-|---------|-------------------------|-------------------------------------|
+| Setting | Option A: Company AI Hub | Option B: Local Ollama (native) |
+|---------|-------------------------|----------------------------------|
 | `AGENT_ENABLED` | `true` | `true` |
-| `LLM_BASE_URL` | `https://company-hub.internal/api` | `http://localhost:4000` |
+| `LLM_PROVIDER` | `anthropic` | `ollama` |
+| `LLM_BASE_URL` | `https://company-hub.internal/api` | `http://localhost:11434` |
 | `LLM_API_KEY` | `sk-company-xxxxxxxx` | `not-needed` |
-| `LLM_MODEL` | `claude-sonnet-4-20250514` | `ollama/llama3.1` |
+| `LLM_MODEL` | `claude-sonnet-4-20250514` | `qwen2.5-coder:14b` (or UI-picked) |
 | `LLM_MAX_TOKENS` | `4000` | `2000` |
-| `LLM_TIMEOUT_MS` | `60000` | `120000` |
+| `LLM_TIMEOUT_MS` | `60000` | `180000` |
 | `AGENT_MODE` | `advisory` | `advisory` |
+| Runtime model switching | Env var only | **UI dropdown** |
 
 ### Switch in One Step
 
 **From IDE (IntelliJ / VS Code):**
-Edit your Run Configuration's environment variables — change only `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`. Restart the app.
+Edit your Run Configuration's environment variables — change `LLM_PROVIDER`,
+`LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`. Restart the app.
 
 **From terminal:**
 ```bash
 # Company hub
-export LLM_BASE_URL=https://company-hub.internal/api LLM_API_KEY=sk-xxx LLM_MODEL=claude-sonnet-4-20250514
+export LLM_PROVIDER=anthropic LLM_BASE_URL=https://company-hub.internal/api LLM_API_KEY=sk-xxx LLM_MODEL=claude-sonnet-4-20250514
 
-# Local model
-export LLM_BASE_URL=http://localhost:4000 LLM_API_KEY=not-needed LLM_MODEL=ollama/llama3.1
+# Local Ollama (native, no proxy)
+export LLM_PROVIDER=ollama LLM_BASE_URL=http://localhost:11434 LLM_API_KEY=not-needed LLM_MODEL=qwen2.5-coder:14b
 ```
 
 Then run:
@@ -501,9 +501,11 @@ watchdog-backend:
 ```
 com.watchdog
 ├── aihub/                    # FR-1: LLM client abstraction
-│   ├── LlmClient.java       #   Interface
-│   ├── AnthropicLlmClient.java  # Anthropic Messages API impl
-│   ├── AihubConfig.java      #   Spring bean wiring
+│   ├── LlmClient.java        #   Interface
+│   ├── AnthropicLlmClient.java   # Anthropic Messages API impl (Anthropic / Bedrock / IDFC AI Hub)
+│   ├── OllamaLlmClient.java      # Native Ollama /api/chat impl (local, no proxy)
+│   ├── OllamaModelService.java   # Lists & switches models powering UI dropdown
+│   ├── AihubConfig.java      #   Spring bean wiring (provider switch)
 │   └── model/                #   ChatMessage, ToolCall, ToolSpec, etc.
 │
 ├── agent/                    # FR-2, FR-7, FR-8, FR-9: Agent layer

@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAgentSocket } from '../hooks/useAgentSocket';
 import {
-  AgentAnswer, AgentChatTurn, AgentStatus, AgentStep, AgentStreamEnvelope
+  AgentAnswer, AgentChatTurn, AgentStatus, AgentStep, AgentStreamEnvelope,
+  ModelsResponse, OllamaModel
 } from '../types/agent';
 
 const WATCHDOG_API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -40,6 +41,8 @@ export const AgentConsole: React.FC = () => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Record<number, boolean>>({});
+  const [availableModels, setAvailableModels] = useState<OllamaModel[]>([]);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const { connected, subscribeToSession } = useAgentSocket();
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -48,11 +51,46 @@ export const AgentConsole: React.FC = () => {
     []
   );
 
-  useEffect(() => {
-    axios.get(`${WATCHDOG_API}/api/agent/status`)
+  const refreshStatus = () => {
+    axios.get<AgentStatus>(`${WATCHDOG_API}/api/agent/status`)
       .then(res => setStatus(res.data))
       .catch(() => setStatus({ enabled: false, message: 'Agent status endpoint unavailable' }));
+  };
+
+  const refreshModels = () => {
+    axios.get<ModelsResponse>(`${WATCHDOG_API}/api/agent/models`)
+      .then(res => setAvailableModels(res.data.models ?? []))
+      .catch(() => setAvailableModels([]));
+  };
+
+  useEffect(() => {
+    refreshStatus();
   }, []);
+
+  useEffect(() => {
+    if (status?.enabled && status?.modelSwitchSupported) {
+      refreshModels();
+    }
+  }, [status?.enabled, status?.modelSwitchSupported]);
+
+  const onModelChange = async (newModel: string) => {
+    if (!newModel || newModel === status?.model || switchingModel) return;
+    setSwitchingModel(true);
+    try {
+      await axios.post(`${WATCHDOG_API}/api/agent/model`, { model: newModel });
+      refreshStatus();
+    } catch (e) {
+      console.error('Failed to switch model', e);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return '';
+    const gb = bytes / (1024 ** 3);
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
+  };
 
   useEffect(() => {
     if (scrollerRef.current) {
@@ -145,18 +183,42 @@ LLM_MODEL=<...>`}
 
   return (
     <div className="bg-gray-900 rounded-lg flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
-      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-white font-semibold">AI Copilot</h2>
           <p className="text-xs text-gray-500">
-            Mode: <span className="text-gray-300">{status?.mode ?? '—'}</span>
-            {' · '}Model: <span className="text-gray-300">{status?.model ?? '—'}</span>
+            Provider: <span className="text-gray-300">{status?.provider ?? '—'}</span>
+            {' · '}Mode: <span className="text-gray-300">{status?.mode ?? '—'}</span>
             {' · '}Stream: <span className={connected ? 'text-green-400' : 'text-gray-500'}>{connected ? 'live' : 'sync'}</span>
           </p>
         </div>
-        <span className="text-xs text-orange-400 bg-orange-900/30 px-2 py-1 rounded">
-          Advisory only — no actions are executed
-        </span>
+        <div className="flex items-center gap-3">
+          {status?.modelSwitchSupported && availableModels.length > 0 ? (
+            <label className="text-xs text-gray-400 flex items-center gap-2">
+              Model:
+              <select
+                value={status?.model ?? ''}
+                onChange={(e) => onModelChange(e.target.value)}
+                disabled={switchingModel || sending}
+                className="bg-gray-800 text-gray-200 text-xs border border-gray-700 rounded px-2 py-1 outline-none focus:border-blue-500 disabled:opacity-50"
+              >
+                {availableModels.map(m => (
+                  <option key={m.name} value={m.name}>
+                    {m.name}{m.parameterSize ? ` (${m.parameterSize})` : ''}{m.size ? ` · ${formatSize(m.size)}` : ''}
+                  </option>
+                ))}
+              </select>
+              {switchingModel && <span className="text-gray-500 animate-pulse">switching…</span>}
+            </label>
+          ) : (
+            <span className="text-xs text-gray-500">
+              Model: <span className="text-gray-300">{status?.model ?? '—'}</span>
+            </span>
+          )}
+          <span className="text-xs text-orange-400 bg-orange-900/30 px-2 py-1 rounded">
+            Advisory only — no actions are executed
+          </span>
+        </div>
       </div>
 
       <div ref={scrollerRef} className="flex-1 overflow-y-auto p-4 space-y-4">

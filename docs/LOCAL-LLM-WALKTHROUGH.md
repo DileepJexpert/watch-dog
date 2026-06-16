@@ -6,6 +6,11 @@ error from the sample app, and watch the AI Copilot diagnose it.
 
 **Total time: ~30 min** (most of which is the first Ollama model pull).
 
+> **No proxy required.** WATCHDOG has a native `OllamaLlmClient` that speaks
+> directly to Ollama's `/api/chat` endpoint. You also get a **model dropdown
+> in the UI** populated from `ollama list` — switch models at runtime, no
+> rebuild, no restart.
+
 ---
 
 ## What you'll have running at the end
@@ -25,18 +30,20 @@ error from the sample app, and watch the AI Copilot diagnose it.
   │   └──────────────────┘         │  │  Jaeger    │ │Prometheus│ │ │
   │                                │  │  :16686    │ │  :9090   │ │ │
   │   ┌──────────────────┐         │  └────────────┘ └──────────┘ │ │
-  │   │  Ollama          │ LLM     │  ┌────────────┐ ┌──────────┐ │ │
-  │   │  (llama3.1 8B)   │ calls   │  │ Grafana    │ │  Kafka   │ │ │
-  │   │  :11434          │◀────────│  │  :3001     │ │ Postgres │ │ │
-  │   │                  │         │  └────────────┘ │ Redis    │ │ │
-  │   └──────────────────┘         │  ┌──────────────┴──────────┐ │ │
-  │                                │  │  WATCHDOG backend       │ │ │
-  │   ┌──────────────────┐         │  │  :8080                  │ │ │
-  │   │  LiteLLM proxy   │◀────────│  │  + AI Copilot           │ │ │
-  │   │  :4000           │         │  └─────────────────────────┘ │ │
-  │   │  (Anthropic →    │         │  ┌─────────────────────────┐ │ │
-  │   │   Ollama bridge) │         │  │  WATCHDOG frontend      │ │ │
-  │   └──────────────────┘         │  │  :3000  (you open this) │ │ │
+  │   │  Ollama          │ direct  │  ┌────────────┐ ┌──────────┐ │ │
+  │   │  qwen2.5-coder:  │ /api/   │  │ Grafana    │ │  Kafka   │ │ │
+  │   │  14b / 7b / etc. │ chat    │  │  :3001     │ │ Postgres │ │ │
+  │   │  :11434          │◀────────│  └────────────┘ │ Redis    │ │ │
+  │   │                  │         │  ┌──────────────┴──────────┐ │ │
+  │   └──────────────────┘         │  │  WATCHDOG backend       │ │ │
+  │                                │  │  :8080                  │ │ │
+  │                                │  │  OllamaLlmClient        │ │ │
+  │                                │  │  + AI Copilot           │ │ │
+  │                                │  └─────────────────────────┘ │ │
+  │                                │  ┌─────────────────────────┐ │ │
+  │                                │  │  WATCHDOG frontend      │ │ │
+  │                                │  │  :3000  (you open this) │ │ │
+  │                                │  │  ← model dropdown here  │ │ │
   │                                │  └─────────────────────────┘ │ │
   │                                └──────────────────────────────┘ │
   └─────────────────────────────────────────────────────────────────┘
@@ -50,8 +57,7 @@ You need:
 - **Docker Desktop** running (or Docker Engine + Compose v2)
 - **JDK 17** or higher
 - **Maven 3.9+**
-- **Python 3.10+** (for the LiteLLM proxy)
-- **~12 GB free RAM** (Ollama 8B model + Docker stack)
+- **~12 GB free RAM** (depends on model size — see size table at the end)
 
 Check:
 ```bash
@@ -59,7 +65,6 @@ docker --version          # >= 20
 docker compose version    # v2.x
 java -version             # 17+
 mvn -v                    # 3.9+
-python3 --version         # 3.10+
 ```
 
 ---
@@ -84,102 +89,89 @@ Download from <https://ollama.com/download> and install. Ollama starts automatic
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-### Pull a model
+### Pull one or more models
+
+Pull whichever you want — the UI will list every model you have. Best
+recommendations for tool/function-calling with WATCHDOG's agent:
 
 ```bash
-# 8B model — needs ~8 GB RAM, fast enough for tool-use loops
-ollama pull llama3.1
+# Best for tool-use at 14B — needs ~10 GB RAM, ~10-20s per step
+ollama pull qwen2.5-coder:14b
 
-# Verify the model is loaded
+# Lighter alternative — ~7 GB RAM, ~5-10s per step
+ollama pull qwen2.5-coder:7b
+
+# (Optional) keep the small one around for quick smoke tests
+ollama pull llama3.2:3b-instruct-q4_0
+```
+
+Verify:
+```bash
 ollama list
-# NAME              ID            SIZE      MODIFIED
-# llama3.1:latest   xxxxxxxxxxxx  4.7 GB    just now
+# NAME                         ID              SIZE      MODIFIED
+# qwen2.5-coder:14b            xxxxxxxxxxxx    9.0 GB    just now
+# qwen2.5-coder:7b             xxxxxxxxxxxx    4.7 GB    just now
+# llama3.2:3b-instruct-q4_0    xxxxxxxxxxxx    1.9 GB    just now
 ```
 
 ### Smoke-test Ollama
 
 ```bash
-curl http://localhost:11434/api/generate -d '{
-  "model": "llama3.1",
-  "prompt": "Say hello in one short sentence.",
+curl http://localhost:11434/api/chat -d '{
+  "model": "qwen2.5-coder:14b",
+  "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
   "stream": false
 }'
-# Should return JSON with a "response" field. If this works, the model is live.
+# Should return JSON with message.content set. If this works, the model is live.
 ```
 
 ---
 
-## Step 3 — Start the LiteLLM proxy (translates Anthropic API → Ollama)
+## Step 3 — Start the WATCHDOG + observability stack (Docker)
 
-WATCHDOG's `AnthropicLlmClient` speaks the Anthropic Messages API (`/v1/messages`).
-LiteLLM is a tiny proxy that accepts that format and forwards to Ollama.
-
-### Install
-
-```bash
-# Use a virtualenv to avoid polluting system Python
-python3 -m venv ~/.litellm-venv
-source ~/.litellm-venv/bin/activate
-pip install 'litellm[proxy]'
-```
-
-### Start the proxy
-
-Open a **dedicated terminal** (it needs to stay running):
-
-```bash
-source ~/.litellm-venv/bin/activate
-litellm --model ollama/llama3.1 --port 4000 --drop_params
-```
-
-You'll see:
-```
-LiteLLM: Proxy initialized with model: ollama/llama3.1
-Uvicorn running on http://0.0.0.0:4000
-```
-
-### Smoke-test the proxy
-
-In a different terminal:
-```bash
-curl -s http://localhost:4000/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'x-api-key: not-needed' \
-  -H 'anthropic-version: 2023-06-01' \
-  -d '{
-    "model": "ollama/llama3.1",
-    "max_tokens": 100,
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}]
-  }' | python3 -m json.tool
-```
-
-You should see a response in **Anthropic Messages format** (with `content: [{type: "text", text: "..."}]`). If yes — the LLM endpoint is ready.
-
----
-
-## Step 4 — Start the WATCHDOG + observability stack (Docker)
+> **No proxy needed.** WATCHDOG talks to Ollama directly via
+> `OllamaLlmClient` (selected by `LLM_PROVIDER=ollama`). You can also pick
+> the active model from a dropdown in the UI — no env-var edits needed
+> to switch.
 
 ```bash
 cd /path/to/watch-dog
 mkdir -p logs                     # the sample app will write JSON logs here
 ```
 
-### Configure the AI Copilot with local LLM env vars
+### Configure the AI Copilot to use native Ollama
 
 ```bash
 cat > demo/.env <<'EOF'
 AGENT_ENABLED=true
 AGENT_MODE=advisory
-LLM_BASE_URL=http://host.docker.internal:4000
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://host.docker.internal:11434
 LLM_API_KEY=not-needed
-LLM_MODEL=ollama/llama3.1
+LLM_MODEL=qwen2.5-coder:14b
+LLM_TIMEOUT_MS=180000
 APM_HOST_PORT=9090
 EOF
 ```
 
-> `host.docker.internal` lets containers reach LiteLLM running on your host.
-> `APM_HOST_PORT=9090` tells WATCHDOG the sample app listens on port 9090
-> (we use 9090 to avoid clashing with the backend on 8080).
+**Windows PowerShell** (equivalent):
+```powershell
+@"
+AGENT_ENABLED=true
+AGENT_MODE=advisory
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://host.docker.internal:11434
+LLM_API_KEY=not-needed
+LLM_MODEL=qwen2.5-coder:14b
+LLM_TIMEOUT_MS=180000
+APM_HOST_PORT=9090
+"@ | Out-File -FilePath demo\.env -Encoding ascii
+```
+
+> `host.docker.internal` lets the WATCHDOG container reach Ollama running
+> on your host machine (port 11434). `APM_HOST_PORT=9090` tells WATCHDOG
+> the sample app listens on port 9090 (avoids clashing with the backend on 8080).
+> `LLM_MODEL` is just the initial pick — you can change it from the UI dropdown later.
 
 ### Bring up the stack
 
@@ -209,7 +201,10 @@ Open in your browser:
 | Grafana (metrics) | <http://localhost:3001> | admin / watchdog |
 | Prometheus | <http://localhost:9090> | none |
 
-The **AI Copilot** tab on the WATCHDOG UI should now say `enabled: true` and `model: ollama/llama3.1`.
+The **AI Copilot** tab on the WATCHDOG UI should now say `enabled: true`,
+`provider: ollama`, and `model: qwen2.5-coder:14b`. There will be a **Model**
+dropdown in the header listing every model from `ollama list` — pick any
+of them and the next agent call uses it.
 
 Confirm via API:
 ```bash
@@ -217,14 +212,35 @@ curl -s localhost:8080/api/agent/status | python3 -m json.tool
 # {
 #   "enabled": true,
 #   "mode": "advisory",
-#   "model": "ollama/llama3.1",
+#   "provider": "ollama",
+#   "model": "qwen2.5-coder:14b",
+#   "modelSwitchSupported": true,
 #   ...
 # }
+
+# List the models the dropdown will show
+curl -s localhost:8080/api/agent/models | python3 -m json.tool
+# {
+#   "provider": "ollama",
+#   "active": "qwen2.5-coder:14b",
+#   "models": [
+#     {"name": "qwen2.5-coder:14b",            "parameterSize": "14B", "size": 9000000000, ...},
+#     {"name": "qwen2.5-coder:7b",             "parameterSize": "7B",  "size": 4700000000, ...},
+#     {"name": "deepseek-coder:6.7b",          "parameterSize": "7B",  "size": 3800000000, ...},
+#     {"name": "llama3.2:3b-instruct-q4_0",    "parameterSize": "3B",  "size": 1900000000, ...}
+#   ]
+# }
+
+# Switch the active model at runtime (no restart needed)
+curl -X POST localhost:8080/api/agent/model \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen2.5-coder:7b"}'
+# {"active":"qwen2.5-coder:7b","message":"Active model updated"}
 ```
 
 ---
 
-## Step 5 — Create a minimal sample Spring Boot app
+## Step 4 — Create a minimal sample Spring Boot app
 
 We'll build a tiny app with three endpoints: `/work` (healthy), `/break` (logs errors), `/slow` (slow trace).
 
@@ -389,7 +405,7 @@ ls target/demo-app-*.jar
 
 ---
 
-## Step 6 — Run the sample app from the watch-dog repo root
+## Step 5 — Run the sample app from the watch-dog repo root
 
 > Important: run from the **watch-dog repo root** so the `./logs/` directory
 > matches what Filebeat (in Docker) is watching.
@@ -439,7 +455,7 @@ If any of these fail, check `./demo/README.md` → Troubleshooting section.
 
 ---
 
-## Step 7 — Trigger an error from the sample app
+## Step 6 — Trigger an error from the sample app
 
 ```bash
 # Fires 30 ERROR logs with stack traces in one shot
@@ -471,7 +487,7 @@ Open <http://localhost:3000> — you'll see the incident on the dashboard.
 
 ---
 
-## Step 8 — Ask the AI Copilot (using your LOCAL Ollama model)
+## Step 7 — Ask the AI Copilot (using your LOCAL Ollama model)
 
 ### Option A — From the UI
 
@@ -536,22 +552,19 @@ You ask question
       │
       ▼
 WATCHDOG backend (Docker)
+OllamaLlmClient
       │
-      │ HTTP POST /v1/messages (Anthropic format)
-      ▼
-LiteLLM proxy on host:4000
-      │
-      │ translates → Ollama format
+      │ HTTP POST /api/chat (native Ollama format)
       ▼
 Ollama on host:11434
       │
-      │ llama3.1 8B decides which tools to call
+      │ qwen2.5-coder:14b decides which tools to call
       ▼
-Back to WATCHDOG → executes search_logs(), correlate(), etc.
+Back to WATCHDOG → executes search_logs(), correlate(), etc. in parallel
       │
-      │ tool outputs sent back as tool_result blocks
+      │ tool outputs sent back as role:tool messages
       ▼
-LiteLLM → Ollama → final answer
+Ollama → final answer (calls finalize_answer tool)
       │
       ▼
 Returned as FR-9 AgentAnswer
@@ -559,7 +572,7 @@ Returned as FR-9 AgentAnswer
 
 ---
 
-## Step 9 — Inspect the audit trail (proof it worked)
+## Step 8 — Inspect the audit trail (proof it worked)
 
 Every agent run is recorded in `agent_audit`:
 
@@ -588,17 +601,29 @@ docker exec watchdog-postgres psql -U watchdog -d watchdog -c "
 
 | Task | Command |
 |------|---------|
-| Start LiteLLM proxy | `source ~/.litellm-venv/bin/activate && litellm --model ollama/llama3.1 --port 4000 --drop_params` |
 | Start the Docker stack | `docker compose -f demo/docker-compose.local-app.yml --env-file demo/.env up -d` |
 | Start the sample app | (from repo root) `java -javaagent:.../opentelemetry-javaagent.jar -D... -jar /tmp/demo-app/target/demo-app-0.0.1-SNAPSHOT.jar` |
 | Trigger errors | `curl http://localhost:9090/break` |
 | Ask the agent | `curl -X POST localhost:8080/api/agent/ask -H 'Content-Type: application/json' -d '{"question":"...","sessionId":"x"}'` |
+| List Ollama models | `curl localhost:8080/api/agent/models \| jq` |
+| Switch active model | `curl -X POST localhost:8080/api/agent/model -H 'Content-Type: application/json' -d '{"model":"qwen2.5-coder:7b"}'` (or just pick from the UI dropdown) |
 | Verify reachability | `./demo/check.sh` |
 | Open dashboard | <http://localhost:3000> |
 | Tear down Docker | `docker compose -f demo/docker-compose.local-app.yml down -v` |
 | Stop sample app | `Ctrl+C` in its terminal |
-| Stop LiteLLM | `Ctrl+C` in its terminal |
 | Stop Ollama | `pkill ollama` (macOS/Linux) |
+
+---
+
+## Switching models from the UI (the easy way)
+
+1. Open <http://localhost:3000> → **AI Copilot** tab
+2. Top-right of the chat: **Model** dropdown lists every model from `ollama list`
+3. Pick a different model → next agent call uses it (no restart, no env edit)
+4. Bottom-left status updates to confirm the change
+
+If you pull a new model later (`ollama pull qwen2.5:32b`), the dropdown
+refreshes on page reload.
 
 ---
 
@@ -607,37 +632,31 @@ docker exec watchdog-postgres psql -U watchdog -d watchdog -c "
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `/api/agent/status` returns `enabled: false` | env vars not picked up | `docker compose -f demo/docker-compose.local-app.yml --env-file demo/.env up -d watchdog-backend` |
-| Agent answer takes > 2 minutes | local model is slow on first call | Set `LLM_TIMEOUT_MS=180000` in `demo/.env` and restart backend |
-| `host.docker.internal` not resolvable (Linux) | older Docker | The compose file already aliases via `extra_hosts: host-gateway` — verify with `docker exec watchdog-backend getent hosts host.docker.internal` |
+| `provider: anthropic` in status | forgot `LLM_PROVIDER=ollama` | Add to `demo/.env`, then `docker compose ... up -d watchdog-backend` |
+| Model dropdown empty | Ollama unreachable from container | Verify with `docker exec watchdog-backend curl -sf http://host.docker.internal:11434/api/tags`. On Linux this requires `extra_hosts: host-gateway` (already set in the compose file) |
+| Agent answer takes > 2 minutes | local model is slow on first call | First call warms up the model — subsequent calls are faster. Bump `LLM_TIMEOUT_MS=300000` for very large models |
 | Prometheus `local-app` target DOWN | sample app on wrong port | Confirm `server.port: 9090` in the app and `APM_HOST_PORT=9090` in `demo/.env` |
-| No incidents after `/break` | logs not reaching ES | `curl localhost:9200/_cat/indices?v` — confirm `logs-YYYY.MM.DD` exists and has docs |
-| LiteLLM proxy: `model not found` | Ollama not running or model not pulled | `ollama list` — should show `llama3.1` |
-| Agent loops without finalizing | small model can't follow tool format | Try `ollama pull llama3.1:70b` if you have RAM, OR lower `AGENT_MAX_STEPS=4` in `demo/.env` |
-| Agent returns generic answer with no evidence | model couldn't parse tools — `--drop_params` not set | Restart LiteLLM with `--drop_params` flag |
-| OOM on Ollama | model too big for RAM | Use a smaller model: `ollama pull mistral` (7B), then `LLM_MODEL=ollama/mistral` |
+| No incidents after `/break` | logs not reaching ES | `curl localhost:9200/_cat/indices?v` — confirm `logs-YYYY.MM.DD` exists |
+| Agent loops without finalizing | smaller model can't follow tool format | Switch to a 14B+ model from the dropdown, OR lower `AGENT_MAX_STEPS=4` |
+| Agent returns generic answer with no evidence | model didn't emit tool calls — likely a non tool-capable model | Pick a model that supports tools: qwen2.5-coder family is good, llama3.2:3b is borderline |
+| OOM on Ollama | model too big for RAM | Switch to a smaller model from the dropdown (e.g. `qwen2.5-coder:7b`) |
 
 ---
 
 ## Model size vs quality cheat sheet
 
+(These are the models you have today.)
+
 | Model | Size | RAM | Quality for tool-use | Speed (per agent step) |
 |-------|------|-----|----------------------|------------------------|
-| `llama3.1` (8B) | 4.7 GB | ~8 GB | Good | ~5-10s |
-| `mistral` (7B) | 4.1 GB | ~6 GB | OK | ~4-8s |
-| `qwen2.5:7b` | 4.4 GB | ~7 GB | Very good for tools | ~5-10s |
-| `llama3.1:70b` | 40 GB | ~48 GB | Excellent | ~20-40s |
-| `qwen2.5:32b` | 19 GB | ~24 GB | Excellent for tools | ~15-25s |
+| `qwen2.5-coder:14b` | 9.0 GB | ~10 GB | **Best** — tool-use trained | ~10-20s |
+| `qwen2.5-coder:7b` | 4.7 GB | ~7 GB | Very good | ~5-10s |
+| `deepseek-coder:6.7b` | 3.8 GB | ~6 GB | OK | ~5-8s |
+| `llama3.2:3b-instruct-q4_0` | 1.9 GB | ~3 GB | Weak (often hallucinates tool args) | ~2-5s |
 
-For first testing, start with `llama3.1` (8B). If answers feel weak, try `qwen2.5:7b` — it's tuned for tool/function-calling.
+**Recommendation**: start with `qwen2.5-coder:14b` for best results; switch to
+`qwen2.5-coder:7b` from the UI dropdown if it's too slow.
 
-To switch:
-```bash
-ollama pull qwen2.5:7b
-# Restart LiteLLM:
-litellm --model ollama/qwen2.5:7b --port 4000 --drop_params
-# Update demo/.env:
-sed -i 's|LLM_MODEL=.*|LLM_MODEL=ollama/qwen2.5:7b|' demo/.env
-docker compose -f demo/docker-compose.local-app.yml --env-file demo/.env up -d watchdog-backend
-```
-
-That's the entire switch — no rebuild, no code change.
+That's it — no rebuild, no proxy, no code change. The provider abstraction
+(FR-1) gives you native Ollama support via `OllamaLlmClient` and the model
+dropdown manages everything at runtime.
