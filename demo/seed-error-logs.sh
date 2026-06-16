@@ -10,7 +10,7 @@
 #   - The AI Copilot can answer "what just happened to <service>?"
 
 set -euo pipefail
-ES_URL="${ES_URL:-http://localhost:9200}"
+ES_URL="${ES_URL:-http://localhost:9201}"
 SERVICE="${1:-payments-svc}"
 COUNT="${2:-15}"
 
