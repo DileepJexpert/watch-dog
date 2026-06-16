@@ -4,8 +4,8 @@
 
 set -u
 API="${SENTINEL_API:-http://localhost:8080}"
-ES="${ES_URL:-http://localhost:9200}"
-JAEGER="${JAEGER_URL:-http://localhost:16686}"
+ES="${ES_URL:-http://localhost:9201}"
+JAEGER="${JAEGER_URL:-http://localhost:16687}"
 GRAFANA="${GRAFANA_URL:-http://localhost:3001}"
 
 bar() { printf '\n── %s ──\n' "$1"; }
