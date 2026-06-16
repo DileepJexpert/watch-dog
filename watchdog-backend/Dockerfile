@@ -1,16 +1,16 @@
+# Build context = watchdog-backend/ (single-module flat layout)
 FROM eclipse-temurin:17-jdk-alpine AS builder
 WORKDIR /app
 
-# Copy Maven wrapper and pom files
-COPY ../pom.xml ../pom.xml
+RUN apk add --no-cache maven
+
+# Cache deps first
 COPY pom.xml .
+RUN mvn -B dependency:go-offline
 
-# Download dependencies (cached layer)
-RUN apk add --no-cache maven && mvn dependency:go-offline -B
-
-# Build application
+# Compile + package
 COPY src ./src
-RUN mvn package -DskipTests -B
+RUN mvn -B -DskipTests package
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
