@@ -291,7 +291,7 @@ The AI layer is additive — the deterministic engine runs identically whether t
 | **FR-9** | Structured Output Contract | `finalize_answer` tool enforces `AgentAnswer { summary, rootCause, evidence[], recommendedActions[], trace[] }` schema. | `agent/dto/AgentAnswer.java`, `agent/dto/*.java` |
 | **NFR** | PII Redaction | Regex + blocked-field scrubbing on all tool outputs before LLM sees them. | `agent/PiiRedactor.java` |
 | **NFR** | Audit Trail | Every agent run recorded: question, tool calls, evidence, model, mode, step count, timestamps. | `agent/AgentAuditService.java`, `V7__create_agent_audit.sql` |
-| **NFR** | Dual Run Mode | IDE + infra Docker (`demo/docker-compose.infra-only.yml`) OR full Docker pipeline (`docker-compose.yml`). CI validates both. | `docker-compose.yml`, `demo/docker-compose.infra-only.yml`, `.github/workflows/ci.yml` |
+| **NFR** | Dual Run Mode | IDE + infra Docker (`demo/docker-compose.infra-only.yml`) OR full Docker pipeline (`watchdog-backend/docker-compose.yml`). CI validates both. | `watchdog-backend/docker-compose.yml`, `demo/docker-compose.infra-only.yml`, `.github/workflows/ci.yml` |
 
 ### Correlation Rules (20)
 
@@ -481,7 +481,7 @@ mvn spring-boot:run
 ```
 
 **From Docker (production pipeline):**
-Set the env vars in `docker-compose.yml` or pass them at deploy time:
+Set the env vars in `watchdog-backend/docker-compose.yml` or pass them at deploy time:
 
 ```yaml
 watchdog-backend:
@@ -598,7 +598,7 @@ watchdog-frontend/src/
 ### Infrastructure
 
 ```
-docker-compose.yml                    # Full-stack (CI/pipeline)
+watchdog-backend/docker-compose.yml   # Full-stack (CI/pipeline + IntelliJ one-click)
 demo/docker-compose.infra-only.yml    # Infra-only (local dev from IDE)
 demo/docker-compose.local-app.yml     # Full stack + host app monitoring
 .github/workflows/ci.yml             # 4-job CI pipeline

@@ -23,9 +23,9 @@
 └──────────────────────┘                  └──────────────────────┘
         │                                        │
         ▼                                        ▼
-demo/docker-compose.infra-only.yml          docker-compose.yml  (repo root)
-+ run backend with mvn spring-boot:run      (no extra steps)
-+ run frontend with npm run dev
+demo/docker-compose.infra-only.yml          watchdog-backend/docker-compose.yml
++ run backend with mvn spring-boot:run      (no extra steps — IntelliJ
++ run frontend with npm run dev              Services tab can run it)
 ```
 
 Both modes are first-class — pick whichever fits the task, switch any time.
@@ -33,9 +33,9 @@ Both modes are first-class — pick whichever fits the task, switch any time.
 | Scenario | Use this | Walkthrough |
 |---|---|---|
 | **LOCAL DEV** — run WATCHDOG from VS Code / IntelliJ, only infra in docker | `demo/docker-compose.infra-only.yml` | Scenario C below |
-| **PIPELINE / FULL DOCKER** — every container builds and starts via `docker compose up` | root `docker-compose.yml` | Scenario D below |
+| **PIPELINE / FULL DOCKER** — every container builds and starts via `docker compose up` | `watchdog-backend/docker-compose.yml` | Scenario D below |
 | Monitor *your own* Spring Boot app with WATCHDOG also in docker | `demo/docker-compose.local-app.yml` + `demo/spring-boot-app-setup.md` | Scenario B below |
-| Pure WATCHDOG with synthetic data (no real app required) | root `docker-compose.yml` + the seeder scripts | Scenarios 1–4 below |
+| Pure WATCHDOG with synthetic data (no real app required) | `watchdog-backend/docker-compose.yml` + the seeder scripts | Scenarios 1–4 below |
 
 Where each mode lives in CI:
 - **Backend unit tests** + **frontend build** run on every push (`backend-tests`, `frontend-build` jobs in `.github/workflows/ci.yml`)
@@ -57,15 +57,18 @@ The scripts live in this folder. They use only `curl` + `python3` — no extra i
 ## 0. One-time setup
 
 ```bash
-cd /path/to/watch-dog
+cd /path/to/watch-dog/watchdog-backend
 
 # Pull + start everything (postgres, redis, kafka, ES, kibana, jaeger,
 # prometheus, grafana, watchdog backend, watchdog frontend).
 docker compose up -d --build
 
 # Confirm reachability (HTTP codes should all be 200, or 404 for grafana root).
-./demo/check.sh
+cd .. && ./demo/check.sh
 ```
+
+> Tip — IntelliJ users: open `watchdog-backend/docker-compose.yml` and click
+> the green ▶ in the gutter to bring up the entire stack in one click.
 
 Open the dashboard at <http://localhost:3000>. The "AI Copilot" tab will say the
 agent is **disabled** at this point — that's expected.
@@ -212,7 +215,7 @@ LlmClient abstraction (FR-1) is the only seam.
 
 | Task                                 | Command                                    |
 |--------------------------------------|--------------------------------------------|
-| Spin up infra                        | `docker compose up -d --build`             |
+| Spin up infra                        | `cd watchdog-backend && docker compose up -d --build` |
 | Verify reachability                  | `./demo/check.sh`                          |
 | Inject ERROR logs                    | `./demo/seed-error-logs.sh payments-svc 15`|
 | List open incidents                  | `curl -s localhost:8080/api/dashboard/incidents/active \| jq` |
@@ -541,7 +544,7 @@ by `docker compose`, including `watchdog-backend` and `watchdog-frontend`.
 ### Bring it up
 
 ```bash
-# from repo root
+cd watchdog-backend
 docker compose up -d --build
 ```
 
@@ -564,8 +567,8 @@ open http://localhost:3000          # backend on :8080, UI on :3000
 
 ### Turn on the AI Copilot
 
-In root `docker-compose.yml` add the agent env vars under `watchdog-backend`
-(or pass them via a `.env` file next to the compose):
+In `watchdog-backend/docker-compose.yml` add the agent env vars under
+`watchdog-backend` (or pass them via a `.env` file next to the compose):
 
 ```yaml
 watchdog-backend:
@@ -577,6 +580,7 @@ watchdog-backend:
 ```
 
 ```bash
+cd watchdog-backend
 ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build watchdog-backend
 ```
 
