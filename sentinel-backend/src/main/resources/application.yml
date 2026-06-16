@@ -2,7 +2,11 @@ spring:
   application:
     name: sentinel
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/sentinel}
+    # Defaults target the docker-compose stack in sentinel-backend/docker-compose.yml,
+    # which remaps host ports (5433 for Postgres, 6380 for Redis, etc.) so it can
+    # coexist with other dev stacks. Override DATABASE_URL/REDIS_PORT/KAFKA_BROKERS
+    # if you're pointing at a different infra.
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/sentinel}
     username: ${DATABASE_USER:sentinel}
     password: ${DATABASE_PASSWORD:sentinel}
     hikari:
@@ -31,7 +35,7 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:}
       timeout: 5000ms
       lettuce:
@@ -39,7 +43,7 @@ spring:
           max-active: 16
           max-idle: 8
   kafka:
-    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9093}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -86,19 +90,19 @@ logging:
 # SENTINEL platform configuration
 sentinel:
   elasticsearch:
-    url: ${ES_URL:http://localhost:9200}
+    url: ${ES_URL:http://localhost:9201}
     index-pattern: "logs-*"
     poll-interval-seconds: 30
     username: ${ES_USER:}
     password: ${ES_PASSWORD:}
 
   jaeger:
-    url: ${JAEGER_URL:http://localhost:16686}
+    url: ${JAEGER_URL:http://localhost:16687}
     slow-trace-threshold-ms: 2000
     poll-interval-seconds: 60
 
   grafana:
-    url: ${GRAFANA_URL:http://localhost:3000}
+    url: ${GRAFANA_URL:http://localhost:3001}
     api-key: ${GRAFANA_API_KEY:}
     poll-interval-seconds: 15
 
@@ -134,9 +138,9 @@ sentinel:
       #   payment-service: ${TEAMS_WEBHOOK_PAYMENT:}
       #   auth-service: ${TEAMS_WEBHOOK_AUTH:}
       #   order-service: ${TEAMS_WEBHOOK_ORDERS:}
-      kibana-base-url: ${KIBANA_URL:http://localhost:5601}
-      grafana-base-url: ${GRAFANA_URL:http://localhost:3000}
-      jaeger-base-url: ${JAEGER_URL:http://localhost:16686}
+      kibana-base-url: ${KIBANA_URL:http://localhost:5602}
+      grafana-base-url: ${GRAFANA_URL:http://localhost:3001}
+      jaeger-base-url: ${JAEGER_URL:http://localhost:16687}
 
   remediation:
     dry-run: ${REMEDIATION_DRY_RUN:true}
