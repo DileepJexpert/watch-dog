@@ -1,5 +1,16 @@
-# SENTINEL local development environment
-# Runs all required services: PostgreSQL, Redis, Kafka, Elasticsearch, Jaeger, Grafana
+# SENTINEL local development — INFRA ONLY
+# Runs the supporting services you can't easily run from IntelliJ:
+#   PostgreSQL, Redis, Kafka (+Zookeeper), Elasticsearch, Kibana,
+#   Jaeger, Prometheus, Grafana.
+#
+# What runs OUTSIDE this file:
+#   - sentinel-backend  -> launch SentinelApplication from IntelliJ with
+#                          --spring.profiles.active=local (uses
+#                          application-local.yml to hit localhost:5433/6380/...)
+#   - sentinel-frontend -> `npm run dev` in sentinel-frontend/
+#
+# Want the FULL DOCKER STACK in one shot instead? Layer the app overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 #
 # Designed to coexist with OTHER microservice stacks that also run Kafka/Postgres:
 #  - No `container_name:` -> Compose auto-names (sentinel-backend-<svc>-1) and
@@ -156,47 +167,5 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-    networks:
-      - sentinel-net
-
-  # ── SENTINEL Backend ───────────────────────────────────────────────────
-  sentinel-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      kafka:
-        condition: service_started
-    ports:
-      - "8080:8080"          # remap to "8081:8080" if another service owns 8080
-    environment:
-      DATABASE_URL: jdbc:postgresql://postgres:5432/sentinel    # internal -> stays 5432
-      DATABASE_USER: sentinel
-      DATABASE_PASSWORD: sentinel
-      REDIS_HOST: redis
-      REDIS_PORT: 6379                                          # internal -> stays 6379
-      KAFKA_BROKERS: kafka:29092                                # internal listener
-      ES_URL: http://elasticsearch:9200                         # internal -> stays 9200
-      JAEGER_URL: http://jaeger:16686
-      GRAFANA_URL: http://grafana:3000
-      REMEDIATION_DRY_RUN: "true"
-    networks:
-      - sentinel-net
-    restart: unless-stopped
-
-  # ── SENTINEL Frontend ──────────────────────────────────────────────────
-  sentinel-frontend:
-    build:
-      context: ../sentinel-frontend
-    depends_on:
-      - sentinel-backend
-    ports:
-      - "3000:80"            # remap to "3002:80" if another service owns 3000
-    environment:
-      VITE_API_URL: http://localhost:8080
     networks:
       - sentinel-net

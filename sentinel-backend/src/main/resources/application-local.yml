@@ -1,0 +1,56 @@
+# SENTINEL "local" profile — IntelliJ / IDE-driven dev runs.
+#
+# Use this when you're running SentinelApplication from your IDE against
+# the infra stack in docker-compose.yml (postgres/redis/kafka/ES/jaeger/
+# prometheus/grafana published on remapped host ports).
+#
+# How to activate:
+#   IntelliJ Run/Debug Configuration -> "Active profiles": local
+#   OR -Dspring.profiles.active=local on the JVM command line
+#   OR SPRING_PROFILES_ACTIVE=local in the run config env
+#
+# How to combine with the "dev" profile (verbose logging, agent enabled):
+#   SPRING_PROFILES_ACTIVE=local,dev
+#
+# Why every URL is hard-coded here even though application.yml defaults are
+# already the same: activating "local" should give you a single, obvious
+# source of truth — change one file when ports move, not two.
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/sentinel
+    username: sentinel
+    password: sentinel
+
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+  kafka:
+    bootstrap-servers: localhost:9093
+
+sentinel:
+  elasticsearch:
+    url: http://localhost:9201
+
+  jaeger:
+    url: http://localhost:16687
+
+  grafana:
+    url: http://localhost:3001
+
+  alerting:
+    teams:
+      kibana-base-url: http://localhost:5602
+      grafana-base-url: http://localhost:3001
+      jaeger-base-url: http://localhost:16687
+
+  remediation:
+    # Hard guarantee: no K8s mutations from a laptop run, ever.
+    dry-run: true
+
+  # AI Copilot stays OFF by default in the local profile. Flip to "true"
+  # via env (AGENT_ENABLED=true) when you're testing the agent loop.
+  agent:
+    enabled: false
