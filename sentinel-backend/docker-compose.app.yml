@@ -1,0 +1,65 @@
+# SENTINEL app overlay — adds the backend + frontend to the infra stack.
+#
+# Use this when you want EVERYTHING in docker (CI, smoke tests, demos)
+# instead of running the JVM/Vite servers from IntelliJ/npm.
+#
+# Bring up:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+#
+# Tear down (keep infra volumes):
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml down
+#
+# Tear down + wipe data:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml down -v
+#
+# Internal hostnames are used here (postgres, redis, kafka, elasticsearch,
+# ...) because everything talks over the sentinel-net bridge network. The
+# host-port remappings in docker-compose.yml (5433/6380/9093/...) are
+# only relevant when you connect FROM the host.
+
+services:
+
+  # ── SENTINEL Backend ───────────────────────────────────────────────────
+  sentinel-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "8080:8080"          # remap to "8081:8080" if another service owns 8080
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/sentinel    # internal -> stays 5432
+      DATABASE_USER: sentinel
+      DATABASE_PASSWORD: sentinel
+      REDIS_HOST: redis
+      REDIS_PORT: 6379                                          # internal -> stays 6379
+      KAFKA_BROKERS: kafka:29092                                # internal listener
+      ES_URL: http://elasticsearch:9200                         # internal -> stays 9200
+      JAEGER_URL: http://jaeger:16686
+      GRAFANA_URL: http://grafana:3000
+      KIBANA_URL: http://kibana:5601
+      REMEDIATION_DRY_RUN: "true"
+    networks:
+      - sentinel-net
+    restart: unless-stopped
+
+  # ── SENTINEL Frontend ──────────────────────────────────────────────────
+  sentinel-frontend:
+    build:
+      context: ../sentinel-frontend
+    depends_on:
+      - sentinel-backend
+    ports:
+      - "3000:80"            # remap to "3002:80" if another service owns 3000
+    environment:
+      VITE_API_URL: http://localhost:8080
+    networks:
+      - sentinel-net
