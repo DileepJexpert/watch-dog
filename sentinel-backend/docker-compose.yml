@@ -1,7 +1,13 @@
-version: '3.9'
-
 # SENTINEL local development environment
 # Runs all required services: PostgreSQL, Redis, Kafka, Elasticsearch, Jaeger, Grafana
+#
+# Designed to coexist with OTHER microservice stacks that also run Kafka/Postgres:
+#  - No `container_name:` -> Compose auto-names (sentinel-backend-<svc>-1) and
+#    recreates cleanly on every `up` instead of throwing name conflicts.
+#  - Host ports remapped to non-standard values so they don't collide with
+#    another stack already publishing 5432 / 9092 / 6379 / etc.
+#  - Internal addresses (postgres:5432, kafka:29092, ...) are unchanged because
+#    those are container-to-container on this stack's own network.
 
 networks:
   sentinel-net:
@@ -20,13 +26,12 @@ services:
   # ── PostgreSQL (TimescaleDB extension recommended) ─────────────────────
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: sentinel-postgres
     environment:
       POSTGRES_DB: sentinel
       POSTGRES_USER: sentinel
       POSTGRES_PASSWORD: sentinel
     ports:
-      - "5432:5432"
+      - "5433:5432"          # host 5433 -> avoids clash with another Postgres on 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -40,9 +45,8 @@ services:
   # ── Redis ──────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: sentinel-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"          # host 6380 -> avoids clash with another Redis on 6379
     volumes:
       - redis_data:/data
     networks:
@@ -52,7 +56,6 @@ services:
   # ── Zookeeper + Kafka ──────────────────────────────────────────────────
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.3
-    container_name: sentinel-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -61,15 +64,18 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.3
-    container_name: sentinel-kafka
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
+      - "9093:9092"          # host 9093 -> avoids clash with another Kafka on 9092
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      # Bind both listeners inside the container
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      # Advertise the EXTERNAL listener on the remapped host port (9093) so that
+      # host-machine clients reconnect correctly; internal stays kafka:29092.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093,PLAINTEXT_INTERNAL://kafka:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -81,13 +87,12 @@ services:
   # ── Elasticsearch ──────────────────────────────────────────────────────
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
-    container_name: sentinel-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
+      - "9201:9200"          # host 9201 -> avoids clash with another ES on 9200
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
@@ -101,25 +106,23 @@ services:
   # ── Kibana ─────────────────────────────────────────────────────────────
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.0
-    container_name: sentinel-kibana
     depends_on:
       elasticsearch:
         condition: service_healthy
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     ports:
-      - "5601:5601"
+      - "5602:5601"          # host 5602 -> avoids clash with another Kibana on 5601
     networks:
       - sentinel-net
 
   # ── Jaeger ─────────────────────────────────────────────────────────────
   jaeger:
     image: jaegertracing/all-in-one:1.54
-    container_name: sentinel-jaeger
     ports:
-      - "16686:16686"  # Jaeger UI / Query API
-      - "14268:14268"  # HTTP Collector
-      - "6831:6831/udp" # UDP Compact
+      - "16687:16686"        # Jaeger UI / Query API (remapped from 16686)
+      - "14269:14268"        # HTTP Collector       (remapped from 14268)
+      - "6832:6831/udp"      # UDP Compact          (remapped from 6831)
     environment:
       COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
     networks:
@@ -128,9 +131,8 @@ services:
   # ── Prometheus ─────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.50.0
-    container_name: sentinel-prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"          # host 9091 -> avoids clash with another Prometheus on 9090
     volumes:
       - ../k8s/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -144,11 +146,10 @@ services:
   # ── Grafana ────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.3.1
-    container_name: sentinel-grafana
     depends_on:
       - prometheus
     ports:
-      - "3001:3000"
+      - "3001:3000"          # already non-standard, left as-is
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: sentinel
@@ -158,60 +159,44 @@ services:
     networks:
       - sentinel-net
 
-  # ──────────────────────────────────────────────────────────────────────
-  # NOTE — sentinel-backend and sentinel-frontend are intentionally COMMENTED
-  # OUT in this file.
-  #
-  # The intent of this compose file is "infra only" — bring up the supporting
-  # services you can't easily run on your laptop (Postgres, Redis, Kafka,
-  # Elasticsearch, Kibana, Jaeger, Prometheus, Grafana) so you can run the
-  # JAVA backend from IntelliJ (debug, breakpoints, hot-reload) and the React
-  # frontend with `npm run dev`.
-  #
-  # If you want the full Docker stack instead, uncomment the two services
-  # below — everything is wired and ready to go.
-  # ──────────────────────────────────────────────────────────────────────
+  # ── SENTINEL Backend ───────────────────────────────────────────────────
+  sentinel-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+    ports:
+      - "8080:8080"          # remap to "8081:8080" if another service owns 8080
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/sentinel    # internal -> stays 5432
+      DATABASE_USER: sentinel
+      DATABASE_PASSWORD: sentinel
+      REDIS_HOST: redis
+      REDIS_PORT: 6379                                          # internal -> stays 6379
+      KAFKA_BROKERS: kafka:29092                                # internal listener
+      ES_URL: http://elasticsearch:9200                         # internal -> stays 9200
+      JAEGER_URL: http://jaeger:16686
+      GRAFANA_URL: http://grafana:3000
+      REMEDIATION_DRY_RUN: "true"
+    networks:
+      - sentinel-net
+    restart: unless-stopped
 
-  # # ── SENTINEL Backend ─────────────────────────────────────────────────
-  # sentinel-backend:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: sentinel-backend
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_started
-  #     kafka:
-  #       condition: service_started
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     DATABASE_URL: jdbc:postgresql://postgres:5432/sentinel
-  #     DATABASE_USER: sentinel
-  #     DATABASE_PASSWORD: sentinel
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #     KAFKA_BROKERS: kafka:29092
-  #     ES_URL: http://elasticsearch:9200
-  #     JAEGER_URL: http://jaeger:16686
-  #     GRAFANA_URL: http://grafana:3000
-  #     REMEDIATION_DRY_RUN: "true"
-  #   networks:
-  #     - sentinel-net
-  #   restart: unless-stopped
-
-  # # ── SENTINEL Frontend ────────────────────────────────────────────────
-  # sentinel-frontend:
-  #   build:
-  #     context: ../sentinel-frontend
-  #   container_name: sentinel-frontend
-  #   depends_on:
-  #     - sentinel-backend
-  #   ports:
-  #     - "3000:80"
-  #   environment:
-  #     VITE_API_URL: http://localhost:8080
-  #   networks:
-  #     - sentinel-net
+  # ── SENTINEL Frontend ──────────────────────────────────────────────────
+  sentinel-frontend:
+    build:
+      context: ../sentinel-frontend
+    depends_on:
+      - sentinel-backend
+    ports:
+      - "3000:80"            # remap to "3002:80" if another service owns 3000
+    environment:
+      VITE_API_URL: http://localhost:8080
+    networks:
+      - sentinel-net
