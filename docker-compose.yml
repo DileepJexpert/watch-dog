@@ -161,9 +161,8 @@ services:
   # ── WATCHDOG Backend ───────────────────────────────────────────────────
   watchdog-backend:
     build:
-      # Build context is the repo root so the multi-module parent pom is available.
-      context: .
-      dockerfile: watchdog-backend/Dockerfile
+      context: ./watchdog-backend
+      dockerfile: Dockerfile
     container_name: watchdog-backend
     depends_on:
       postgres:

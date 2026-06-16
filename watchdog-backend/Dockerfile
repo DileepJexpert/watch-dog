@@ -1,14 +1,12 @@
-# Multi-stage build for watchdog-backend.
+# Single-module backend build.
 #
-# IMPORTANT: build context must be the REPO ROOT (not watchdog-backend/) so
-# the multi-module parent pom is available to Maven. The root
-# docker-compose.yml sets:
+# Build context = ./watchdog-backend (the directory containing this Dockerfile).
+# Set in docker-compose.yml as:
 #   build:
-#     context: .
-#     dockerfile: watchdog-backend/Dockerfile
+#     context: ./watchdog-backend
+#     dockerfile: Dockerfile
 #
-# If you run `docker build` directly, do it from the repo root:
-#   docker build -f watchdog-backend/Dockerfile -t watchdog-backend .
+# To build directly: docker build -t watchdog-backend ./watchdog-backend
 
 # ─── builder ──────────────────────────────────────────────────────────────
 FROM eclipse-temurin:17-jdk-alpine AS builder
@@ -16,15 +14,13 @@ WORKDIR /build
 
 RUN apk add --no-cache maven
 
-# 1. Copy the parent pom and the child pom first so Maven can pre-fetch
-#    dependencies into a cached layer (rebuilt only when poms change).
+# Cache deps first — pom only, so this layer rebuilds only when pom changes.
 COPY pom.xml ./pom.xml
-COPY watchdog-backend/pom.xml ./watchdog-backend/pom.xml
-RUN mvn -B -f watchdog-backend/pom.xml dependency:go-offline
+RUN mvn -B dependency:go-offline
 
-# 2. Copy the actual source and build the fat jar.
-COPY watchdog-backend/src ./watchdog-backend/src
-RUN mvn -B -f watchdog-backend/pom.xml package -DskipTests
+# Compile + package
+COPY src ./src
+RUN mvn -B -DskipTests package
 
 # ─── runtime ──────────────────────────────────────────────────────────────
 FROM eclipse-temurin:17-jre-alpine
@@ -33,7 +29,7 @@ WORKDIR /app
 RUN addgroup -S watchdog && adduser -S watchdog -G watchdog
 USER watchdog
 
-COPY --from=builder /build/watchdog-backend/target/watchdog-backend-*.jar app.jar
+COPY --from=builder /build/target/watchdog-backend-*.jar app.jar
 
 EXPOSE 8080
 ENTRYPOINT ["java", \

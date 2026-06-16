@@ -34,12 +34,14 @@ jobs:
           cache: maven
 
       - name: Compile
-        run: mvn -pl watchdog-backend -B -DskipTests clean compile
+        working-directory: watchdog-backend
+        run: mvn -B -DskipTests clean compile
 
       - name: Run unit tests for the AI layer
+        working-directory: watchdog-backend
         run: |
-          mvn -pl watchdog-backend -B test \
-            -Dtest='AnthropicLlmClientTest,PiiRedactorTest,KnowledgeServiceTest,DatabaseConnectorTest'
+          mvn -B test \
+            -Dtest='AnthropicLlmClientTest,OllamaLlmClientTest,PiiRedactorTest,KnowledgeServiceTest,DatabaseConnectorTest'
 
   frontend-build:
     name: Frontend build (Vite)
@@ -72,12 +74,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 1. Validates that the backend Dockerfile + root build context resolve
-      #    the multi-module parent pom correctly (the failure the user hit).
+      # 1. Validates that the backend Dockerfile builds against the
+      #    single-module flat layout (build context = ./watchdog-backend).
       - name: Build watchdog-backend image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: watchdog-backend
           file: watchdog-backend/Dockerfile
           push: false
           tags: watchdog-backend:ci
