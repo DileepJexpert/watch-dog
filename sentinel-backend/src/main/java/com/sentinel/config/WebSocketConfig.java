@@ -18,12 +18,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // setSessionCookieNeeded(false): the wildcard origin pattern above is
+        // incompatible with cookie-bearing cross-origin requests (browsers
+        // refuse to send cookies to "*"), so SockJS handshakes from the React
+        // dev server and the Flutter web app would otherwise fail. We don't
+        // rely on JSESSIONID for routing — there's a single instance — so
+        // making the transport cookieless is safe.
         registry.addEndpoint("/ws/events")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setSessionCookieNeeded(false);
         // FR-3: agent streams step-by-step progress on this endpoint; same broker, separate URL
         registry.addEndpoint("/ws/agent")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setSessionCookieNeeded(false);
     }
 }
