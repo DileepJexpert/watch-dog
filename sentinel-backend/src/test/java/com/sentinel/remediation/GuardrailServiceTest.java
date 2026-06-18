@@ -41,14 +41,16 @@ class GuardrailServiceTest {
         props.getRemediation().setMaxRestartsPerHour(3);
         props.getRemediation().setRestartCooldownMinutes(20);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        // Lenient — used by the restart-limit and recordAction tests, not by the
+        // POD_SCALE_HORIZONTAL "no cooldown" / "cooldown active" paths which
+        // short-circuit before touching opsForValue().
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         guardrailService = new GuardrailService(redisTemplate, remediationRepository, props);
     }
 
     @Test
     void isAllowed_returnsTrueWhenNoCooldown() {
         when(redisTemplate.hasKey(any())).thenReturn(false);
-        when(valueOperations.get(any())).thenReturn(null);
 
         IncidentEntity incident = buildIncident();
         assertThat(guardrailService.isAllowed(incident, RemediationActionType.POD_SCALE_HORIZONTAL)).isTrue();

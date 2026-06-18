@@ -24,6 +24,8 @@ class AlertingServiceTest {
     private PagerDutyNotifier pagerDutyNotifier;
     @Mock
     private OpsGenieNotifier opsGenieNotifier;
+    @Mock
+    private TeamsNotifier teamsNotifier;
 
     @InjectMocks
     private AlertingService alertingService;
@@ -35,6 +37,7 @@ class AlertingServiceTest {
         alertingService.alert(incident);
 
         verify(slackNotifier).sendCritical(incident);
+        verify(teamsNotifier).sendCritical(incident);
         verify(emailNotifier).sendAlert(incident);
         verify(pagerDutyNotifier).triggerIncident(incident);
         verify(opsGenieNotifier).createAlert(incident);
@@ -47,6 +50,7 @@ class AlertingServiceTest {
         alertingService.alert(incident);
 
         verify(slackNotifier).sendHigh(incident);
+        verify(teamsNotifier).sendHigh(incident);
         verify(emailNotifier).sendAlert(incident);
         verifyNoInteractions(pagerDutyNotifier, opsGenieNotifier);
     }
@@ -58,6 +62,7 @@ class AlertingServiceTest {
         alertingService.alert(incident);
 
         verify(slackNotifier).sendMedium(incident);
+        verify(teamsNotifier).sendMedium(incident);
         verifyNoInteractions(emailNotifier, pagerDutyNotifier, opsGenieNotifier);
     }
 
@@ -67,7 +72,7 @@ class AlertingServiceTest {
 
         alertingService.alert(incident);
 
-        verifyNoInteractions(slackNotifier, emailNotifier, pagerDutyNotifier, opsGenieNotifier);
+        verifyNoInteractions(slackNotifier, teamsNotifier, emailNotifier, pagerDutyNotifier, opsGenieNotifier);
     }
 
     private IncidentEntity buildIncident(Severity severity) {
