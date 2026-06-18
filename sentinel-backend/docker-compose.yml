@@ -177,6 +177,10 @@ services:
   # Needed when you run a real Spring Boot app on the host (see
   # demo/sample-app/) and want its logs to reach SENTINEL. If you never run
   # an app locally, this container just sits idle — no harm done.
+  #
+  # Both ../logs (repo root) and ../demo/sample-app/logs are mounted under
+  # /host-logs as siblings, so the **/*.json glob in filebeat.yml picks up
+  # logs from either location.
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.12.0
     user: root
@@ -186,8 +190,7 @@ services:
     command: ["--strict.perms=false"]
     volumes:
       - ../demo/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      # Tails BOTH ../logs (repo root) AND ../demo/sample-app/logs
-      - ../logs:/host-logs:ro
+      - ../logs:/host-logs/root:ro
       - ../demo/sample-app/logs:/host-logs/sample-app:ro
     networks:
       - sentinel-net
