@@ -185,7 +185,7 @@ class LatencyHeatmap extends StatelessWidget {
         }),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => const Color(0xFF1F2937),
+            tooltipBgColor: const Color(0xFF1F2937),
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               final labels = ['P50', 'P95', 'P99'];
               return BarTooltipItem(

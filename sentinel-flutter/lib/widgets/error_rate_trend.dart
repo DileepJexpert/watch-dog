@@ -164,7 +164,7 @@ class ErrorRateTrend extends StatelessWidget {
         lineBarsData: lines,
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => const Color(0xFF1F2937),
+            tooltipBgColor: const Color(0xFF1F2937),
             getTooltipItems: (spots) => spots.map((spot) {
               return LineTooltipItem(
                 '${spot.y.toStringAsFixed(2)}%',

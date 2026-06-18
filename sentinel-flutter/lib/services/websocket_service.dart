@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:stomp_dart_client/stomp_dart_client.dart';
+import 'package:stomp_dart_client/stomp.dart';
+import 'package:stomp_dart_client/stomp_config.dart';
+import 'package:stomp_dart_client/stomp_frame.dart';
 import '../models/models.dart';
 
 class WebSocketService {
