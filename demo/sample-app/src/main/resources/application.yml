@@ -26,19 +26,13 @@ management:
     # 100% sampling for the demo — turn this down in real workloads.
     sampling:
       probability: 1.0
-
-# OTLP exporter: traces go to the Jaeger OTLP HTTP receiver published on
-# the host by docker-compose (4318 -> jaeger:4318 inside the network).
-otel:
-  exporter:
-    otlp:
-      endpoint: http://localhost:4318
-      protocol: http/protobuf
-  service:
-    name: my-spring-boot-app
-  resource:
-    attributes:
-      deployment.environment: local-dev
+  # Spring Boot 3.2 / Micrometer Tracing reads OTLP config from
+  # management.otlp.tracing.* (NOT otel.exporter.otlp.* — that's the
+  # OpenTelemetry SDK's own auto-config, which we're not using).
+  # Trailing /v1/traces is required by the OTLP/HTTP spec.
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
 
 logging:
   level:
