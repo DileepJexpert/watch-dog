@@ -21,7 +21,8 @@ class AgentWebSocketService {
   final _connectionController = StreamController<bool>.broadcast();
   final Map<String, _ActiveSubscription> _subs = {};
 
-  AgentWebSocketService({this.url = 'ws://localhost:8080/ws/agent'});
+  // SockJS handshakes over HTTP first, so the URL must be http(s):// not ws://.
+  AgentWebSocketService({this.url = 'http://localhost:8080/ws/agent'});
 
   Stream<bool> get connectionStream => _connectionController.stream;
   bool get isConnected => _connected;

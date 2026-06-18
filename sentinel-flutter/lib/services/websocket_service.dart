@@ -13,7 +13,10 @@ class WebSocketService {
   bool _connected = false;
   Timer? _reconnectTimer;
 
-  WebSocketService({this.url = 'ws://localhost:8080/ws/events'});
+  // SockJS does its handshake over HTTP and upgrades to WebSocket itself,
+  // so the URL must be http(s):// — passing ws:// throws
+  // "The url has to start with http/https".
+  WebSocketService({this.url = 'http://localhost:8080/ws/events'});
 
   Stream<Incident> get incidentStream => _incidentController.stream;
   Stream<bool> get connectionStream => _connectionController.stream;
