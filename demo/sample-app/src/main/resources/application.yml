@@ -1,0 +1,45 @@
+# Sample app runs on the HOST machine alongside the SENTINEL backend.
+# Port 8081 because :8080 is owned by the SENTINEL backend.
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    # Must match the `service` label in demo/prometheus.yml AND the
+    # OTel resource attribute below — SENTINEL's correlation engine
+    # keys all signals by service name.
+    name: my-spring-boot-app
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      service: my-spring-boot-app
+  tracing:
+    # 100% sampling for the demo — turn this down in real workloads.
+    sampling:
+      probability: 1.0
+
+# OTLP exporter: traces go to the Jaeger OTLP HTTP receiver published on
+# the host by docker-compose (4318 -> jaeger:4318 inside the network).
+otel:
+  exporter:
+    otlp:
+      endpoint: http://localhost:4318
+      protocol: http/protobuf
+  service:
+    name: my-spring-boot-app
+  resource:
+    attributes:
+      deployment.environment: local-dev
+
+logging:
+  level:
+    root: INFO
+    com.example.sampleapp: INFO

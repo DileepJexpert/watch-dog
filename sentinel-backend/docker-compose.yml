@@ -134,7 +134,10 @@ services:
       - "16687:16686"        # Jaeger UI / Query API (remapped from 16686)
       - "14269:14268"        # HTTP Collector       (remapped from 14268)
       - "6832:6831/udp"      # UDP Compact          (remapped from 6831)
+      - "4317:4317"          # OTLP gRPC — point your app's OTel exporter here
+      - "4318:4318"          # OTLP HTTP — point your app's OTel exporter here
     environment:
+      COLLECTOR_OTLP_ENABLED: "true"
       COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
     networks:
       - sentinel-net
@@ -167,5 +170,24 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+    networks:
+      - sentinel-net
+
+  # ── Filebeat — ships ./logs/*.json on the host into Elasticsearch ──────
+  # Needed when you run a real Spring Boot app on the host (see
+  # demo/sample-app/) and want its logs to reach SENTINEL. If you never run
+  # an app locally, this container just sits idle — no harm done.
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.12.0
+    user: root
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    command: ["--strict.perms=false"]
+    volumes:
+      - ../demo/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # Tails BOTH ../logs (repo root) AND ../demo/sample-app/logs
+      - ../logs:/host-logs:ro
+      - ../demo/sample-app/logs:/host-logs/sample-app:ro
     networks:
       - sentinel-net

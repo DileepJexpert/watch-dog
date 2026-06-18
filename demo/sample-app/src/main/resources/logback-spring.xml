@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Two appenders:
+    - CONSOLE: human-readable in the IDE
+    - FILE:    one JSON object per line in ./logs/app.json
+               (the path Filebeat tails — see demo/filebeat.yml)
+
+  The JSON encoder emits ECS-aligned fields (@timestamp, log.level,
+  message, service.name, error.type/message) so SENTINEL's
+  ElasticsearchConnector picks them up without any transform.
+-->
+<configuration>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>logs/app.json</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>logs/app-%d{yyyy-MM-dd}.json</fileNamePattern>
+      <maxHistory>7</maxHistory>
+    </rollingPolicy>
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"service.name":"my-spring-boot-app"}</customFields>
+      <!-- ECS-shaped field names so SENTINEL's parser finds them. -->
+      <fieldNames>
+        <timestamp>@timestamp</timestamp>
+        <message>message</message>
+        <level>log.level</level>
+        <thread>thread</thread>
+        <logger>logger</logger>
+        <stackTrace>error.stack_trace</stackTrace>
+      </fieldNames>
+    </encoder>
+  </appender>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="FILE"/>
+  </root>
+
+</configuration>
