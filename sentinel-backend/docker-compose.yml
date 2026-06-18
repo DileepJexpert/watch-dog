@@ -168,8 +168,19 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: sentinel
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # SENTINEL's GrafanaConnector hits /api/datasources/proxy/1/api/v1/query
+      # without an API key (local profile leaves GRAFANA_API_KEY empty). Letting
+      # the anonymous user have Viewer access on the default org is enough for
+      # the proxy call to succeed; production deploys should swap this for a
+      # service-account token.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
     volumes:
       - grafana_data:/var/lib/grafana
+      # Provisions Prometheus as datasource #1 so /api/datasources/proxy/1/...
+      # resolves. Without this mount, even anonymous-with-Viewer would 404.
+      - ../demo/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - sentinel-net
 
