@@ -54,4 +54,4 @@ try {
     exit 1
 }
 
-Write-Host "[seed] done — SENTINEL will pick these up within ~30s (poll-interval-seconds)"
+Write-Host "[seed] done - SENTINEL will pick these up within ~30s (poll-interval-seconds)"

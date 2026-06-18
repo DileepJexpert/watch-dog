@@ -52,7 +52,7 @@ while ((Get-Date) -lt $end) {
 }
 
 Write-Host ""
-Write-Host "[drive] done — $req total requests"
+Write-Host "[drive] done - $req total requests"
 $counts.GetEnumerator() | Sort-Object Name | ForEach-Object {
     $padded = $_.Key.PadRight(30)
     Write-Host "  $padded $($_.Value)"
