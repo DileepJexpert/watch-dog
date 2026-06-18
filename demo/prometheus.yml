@@ -29,12 +29,12 @@ scrape_configs:
 
   # === Your local Spring Boot app ===
   # Runs on the HOST machine. Pick a port that doesn't clash with sentinel-backend
-  # (which uses 8080 by default). The sample app's run.sh allows SERVER_PORT to be
-  # overridden; we default it to 8081 in the manual-run walkthrough.
+  # (which uses 8080 by default). The bundled demo/sample-app defaults to 1881;
+  # override SERVER_PORT and update this target if you change it.
   - job_name: 'local-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8081']
+      - targets: ['host.docker.internal:1881']
         labels:
           # IMPORTANT: SENTINEL's correlation rules key off the `service` label.
           # Keep this identical to the value in your app's

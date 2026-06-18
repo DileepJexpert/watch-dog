@@ -8,7 +8,7 @@
 
 [CmdletBinding()]
 param(
-    [string] $BaseUrl  = 'http://localhost:8081',
+    [string] $BaseUrl  = 'http://localhost:1881',
     [int]    $Duration = 60
 )
 
@@ -54,5 +54,6 @@ while ((Get-Date) -lt $end) {
 Write-Host ""
 Write-Host "[drive] done — $req total requests"
 $counts.GetEnumerator() | Sort-Object Name | ForEach-Object {
-    Write-Host ("  {0,-30} {1}" -f $_.Key, $_.Value)
+    $padded = $_.Key.PadRight(30)
+    Write-Host "  $padded $($_.Value)"
 }

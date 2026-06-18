@@ -7,7 +7,7 @@ ingests:
 |---|---|---|
 | **JSON logs** | `./logs/app.json` -> Filebeat -> ES `logs-YYYY.MM.DD` | `ElasticsearchConnector` (30s poll) |
 | **OTLP traces** | `localhost:4318` -> Jaeger | `JaegerConnector` (60s poll) |
-| **Prometheus metrics** | `localhost:8081/actuator/prometheus` -> scraped by Prometheus | `GrafanaConnector` / PromQL (15s poll) |
+| **Prometheus metrics** | `localhost:1881/actuator/prometheus` -> scraped by Prometheus | `GrafanaConnector` / PromQL (15s poll) |
 
 The endpoints are tuned for SENTINEL's 20 correlation rules:
 
@@ -43,7 +43,7 @@ cd C:\dileepkm\Learning\watch-dog\demo\sample-app
 mkdir logs -Force
 mvn spring-boot:run
 ```
-Listens on `:8081`.
+Listens on `:1881`.
 
 ### 4. Drive traffic
 

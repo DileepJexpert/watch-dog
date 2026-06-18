@@ -1,7 +1,8 @@
 # Sample app runs on the HOST machine alongside the SENTINEL backend.
-# Port 8081 because :8080 is owned by the SENTINEL backend.
+# Port 1881 because :8080 is owned by the SENTINEL backend and :8081 is a
+# common port that often clashes with other dev stacks.
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:1881}
 
 spring:
   application:
