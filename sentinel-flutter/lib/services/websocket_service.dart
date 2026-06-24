@@ -52,20 +52,31 @@ class WebSocketService {
     _setConnected(true);
     _reconnectTimer?.cancel();
 
-    _client!.subscribe(
-      destination: '/topic/incidents',
-      callback: (frame) {
-        if (frame.body != null) {
-          try {
-            final json = jsonDecode(frame.body!);
-            final incident = Incident.fromJson(json);
-            _incidentController.add(incident);
-          } catch (e) {
-            print('Failed to parse incident: $e');
+    // The socket can drop between the CONNECTED frame and this subscribe call,
+    // which makes subscribe() throw StompBadStateException. Guard + reconnect
+    // instead of letting it surface as an unhandled error that blanks the UI.
+    try {
+      _client!.subscribe(
+        destination: '/topic/incidents',
+        callback: (frame) {
+          if (frame.body != null) {
+            try {
+              final json = jsonDecode(frame.body!);
+              final incident = Incident.fromJson(json);
+              if (!_incidentController.isClosed) {
+                _incidentController.add(incident);
+              }
+            } catch (e) {
+              print('Failed to parse incident: $e');
+            }
           }
-        }
-      },
-    );
+        },
+      );
+    } catch (e) {
+      print('Subscribe failed (will reconnect): $e');
+      _setConnected(false);
+      _scheduleReconnect();
+    }
   }
 
   void _onDisconnect(StompFrame frame) {
@@ -75,7 +86,9 @@ class WebSocketService {
 
   void _setConnected(bool value) {
     _connected = value;
-    _connectionController.add(value);
+    if (!_connectionController.isClosed) {
+      _connectionController.add(value);
+    }
   }
 
   void _scheduleReconnect() {

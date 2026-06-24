@@ -68,7 +68,11 @@ class AgentWebSocketService {
   void _setConnected(bool value) {
     if (_connected == value) return;
     _connected = value;
-    _connectionController.add(value);
+    // A late STOMP frame can fire onConnect/onDisconnect after dispose() has
+    // closed the controller (common during hot-restart). Don't add then.
+    if (!_connectionController.isClosed) {
+      _connectionController.add(value);
+    }
   }
 
   void _scheduleReconnect() {
