@@ -1,69 +1,247 @@
 # SENTINEL "local" profile — IntelliJ / IDE-driven dev runs.
 #
-# Use this when you're running SentinelApplication from your IDE against
-# the infra stack in docker-compose.yml (postgres/redis/kafka/ES/jaeger/
-# prometheus/grafana published on remapped host ports).
-#
-# How to activate:
+# This file is a FULL self-contained config. It mirrors application.yml
+# section-by-section, with localhost+remapped infrastructure hardcoded and
+# a few hard safety / dev-friendly overrides applied. Activate with:
 #   IntelliJ Run/Debug Configuration -> "Active profiles": local
-#   OR -Dspring.profiles.active=local on the JVM command line
-#   OR SPRING_PROFILES_ACTIVE=local in the run config env
+#   OR -Dspring.profiles.active=local
+#   OR SPRING_PROFILES_ACTIVE=local
 #
-# How to combine with the "dev" profile (verbose logging, agent enabled):
-#   SPRING_PROFILES_ACTIVE=local,dev
+# Why localhost+remapped ports: docker-compose in sentinel-backend/ publishes
+# Postgres on 5433, Redis on 6380, Kafka on 9093, ES on 9201, Jaeger on
+# 16687, Grafana on 3001, Kibana on 5602 — so the stack can coexist with
+# other dev stacks already using the default ports.
 #
-# Why every URL is hard-coded here even though application.yml defaults are
-# already the same: activating "local" should give you a single, obvious
-# source of truth — change one file when ports move, not two.
+# Env-var overrides still work — set DATABASE_URL etc. to point at
+# different infra without editing this file.
 
 spring:
+  application:
+    name: sentinel
+
   datasource:
-    url: jdbc:postgresql://localhost:5433/sentinel
-    username: sentinel
-    password: sentinel
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/sentinel}
+    username: ${DATABASE_USER:sentinel}
+    password: ${DATABASE_PASSWORD:sentinel}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          lob:
+            non_contextual_creation: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: false
 
   data:
     redis:
-      host: localhost
-      port: 6380
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
 
   kafka:
-    bootstrap-servers: localhost:9093
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9093}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: sentinel-correlation
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.sentinel.model
+        spring.json.value.default.type: com.sentinel.model.NormalizedEvent
+      auto-offset-reset: latest
 
-sentinel:
-  elasticsearch:
-    url: http://localhost:9201
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
-  jaeger:
-    url: http://localhost:16687
+server:
+  port: ${SERVER_PORT:8080}
 
-  grafana:
-    url: http://localhost:3001
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
 
-  alerting:
-    teams:
-      kibana-base-url: http://localhost:5602
-      grafana-base-url: http://localhost:3001
-      jaeger-base-url: http://localhost:16687
-
-  remediation:
-    # Hard guarantee: no K8s mutations from a laptop run, ever.
-    dry-run: true
-
-  # AI Copilot stays OFF by default in the local profile. Flip to "true"
-  # via env (AGENT_ENABLED=true) when you're testing the agent loop.
-  agent:
-    enabled: false
-
+# === LOCAL-PROFILE LOGGING ===
 # Surface every step of the ingest -> correlate -> incident -> ws-push pipeline
 # at INFO. With this on, the IntelliJ console becomes a live trace and any
 # break in the chain (ES poll empty, no service registered, no rule firing,
 # WS not pushing) shows up as a missing log line.
 logging:
   level:
+    com.sentinel: INFO
     com.sentinel.ingestion: INFO
     com.sentinel.correlation: INFO
     com.sentinel.normalization: INFO
     com.sentinel.api.WebSocketEventController: INFO
+    com.sentinel.scheduler: INFO
+    org.springframework.kafka: WARN
+    io.fabric8: WARN
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+
+# SENTINEL platform configuration
+sentinel:
+  elasticsearch:
+    url: ${ES_URL:http://localhost:9201}
+    index-pattern: "logs-*"
+    poll-interval-seconds: 30
+    username: ${ES_USER:}
+    password: ${ES_PASSWORD:}
+
+  jaeger:
+    url: ${JAEGER_URL:http://localhost:16687}
+    slow-trace-threshold-ms: 2000
+    poll-interval-seconds: 60
+
+  grafana:
+    url: ${GRAFANA_URL:http://localhost:3001}
+    api-key: ${GRAFANA_API_KEY:}
+    poll-interval-seconds: 15
+
+  health-probe:
+    interval-seconds: 10
+    timeout-seconds: 5
+    targets: []
+
+  correlation:
+    window-minutes: 5
+    min-signals-for-correlation: 2
+
+  alerting:
+    slack:
+      webhook-url: ${SLACK_WEBHOOK_URL:}
+      channel: "#sentinel-alerts"
+    pagerduty:
+      integration-key: ${PAGERDUTY_KEY:}
+      events-url: https://events.pagerduty.com/v2/enqueue
+    opsgenie:
+      api-key: ${OPSGENIE_KEY:}
+      alerts-url: https://api.opsgenie.com/v2/alerts
+    teams:
+      default-webhook-url: ${TEAMS_WEBHOOK_URL:}
+      kibana-base-url: ${KIBANA_URL:http://localhost:5602}
+      grafana-base-url: ${GRAFANA_URL:http://localhost:3001}
+      jaeger-base-url: ${JAEGER_URL:http://localhost:16687}
+
+  # === LOCAL HARD SAFETY ===
+  # No K8s mutations from a laptop run, ever. The env-var override is
+  # intentionally NOT honored here so a stray REMEDIATION_DRY_RUN=false
+  # can't accidentally take real action against a cluster.
+  remediation:
+    dry-run: true
+    max-scale-factor: 2.0
+    restart-cooldown-minutes: 20
+    max-restarts-per-hour: 3
+    circuit-breaker-retry-minutes: 5
+    max-circuit-breaker-cycles: 3
+
+  anomaly:
+    z-score-threshold: 3.0
+    retraining-interval-hours: 24
+    min-samples-for-detection: 30
+
+  # AI Copilot OFF by default in the local profile. Set AGENT_ENABLED=true
+  # in your IntelliJ run-config env to flip it on when testing the agent loop.
+  agent:
+    enabled: ${AGENT_ENABLED:false}
+    mode: ${AGENT_MODE:advisory}
+    max-steps: ${AGENT_MAX_STEPS:8}
+    history-max-messages: ${AGENT_HISTORY_MAX:20}
+    proactive-scan-interval-seconds: ${AGENT_PROACTIVE_SCAN_SECONDS:0}
+    rca-on-correlation: ${AGENT_RCA_ON_CORRELATION:false}
+    redaction:
+      enabled: ${AGENT_REDACTION_ENABLED:true}
+
+  aihub:
+    provider: ${LLM_PROVIDER:anthropic}
+    base-url: ${LLM_BASE_URL:}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:}
+    max-tokens: ${LLM_MAX_TOKENS:2000}
+    timeout-ms: ${LLM_TIMEOUT_MS:30000}
+    anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}
+
+  knowledge:
+    embedding-model: ${KNOWLEDGE_EMBEDDING_MODEL:}
+    embedding-base-url: ${KNOWLEDGE_EMBEDDING_BASE_URL:}
+    embedding-api-key: ${KNOWLEDGE_EMBEDDING_API_KEY:}
+    embedding-dimension: ${KNOWLEDGE_EMBEDDING_DIMENSION:1024}
+    top-k: ${KNOWLEDGE_TOP_K:5}
+    pgvector-enabled: ${KNOWLEDGE_PGVECTOR_ENABLED:false}
+
+  db-targets:
+    targets: []
+
+  apm:
+    url: ${APM_URL:}
+    api-key: ${APM_API_KEY:}
+    actuator-targets: []
+
+  # === LOCAL: Daily digest OFF ===
+  # Don't email yourself every morning while testing — flip via env when needed.
+  digest:
+    daily:
+      enabled: ${DIGEST_DAILY_ENABLED:false}
+      cron: ${DIGEST_DAILY_CRON:0 0 9 * * *}
+      lookback-hours: ${DIGEST_LOOKBACK_HOURS:24}
+      use-ai: ${DIGEST_USE_AI:true}
+      slack: ${DIGEST_SLACK:true}
+      email-recipients: ${DIGEST_EMAIL_RECIPIENTS:}
+      max-incidents-in-prompt: 50
+
+  # === LOCAL: First-class Kafka/AMQ ingestion OFF ===
+  # The local stack doesn't usually run Kafka or AMQ for the SAMPLE APP
+  # to push to — your sample-app emits logs/traces/metrics, not Kafka
+  # messages. Enable + populate consumer-groups / queues when you
+  # actually have a target broker to watch.
+  kafka:
+    enabled: ${KAFKA_INGEST_ENABLED:false}
+    bootstrap-servers: ${KAFKA_INGEST_BOOTSTRAP:localhost:9093}
+    poll-interval-seconds: 30
+    admin-timeout-ms: 5000
+    consumer-groups: {}
+    topics: []
+
+  activemq:
+    enabled: ${AMQ_INGEST_ENABLED:false}
+    jolokia-url: ${AMQ_JOLOKIA_URL:http://localhost:8161/api/jolokia}
+    username: ${AMQ_USER:admin}
+    password: ${AMQ_PASSWORD:admin}
+    broker-name: ${AMQ_BROKER_NAME:localhost}
+    poll-interval-seconds: 30
+    queues: {}
