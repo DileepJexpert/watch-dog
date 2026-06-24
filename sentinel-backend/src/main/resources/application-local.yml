@@ -182,37 +182,35 @@ sentinel:
     retraining-interval-hours: 24
     min-samples-for-detection: 30
 
-  # AI Copilot ON by default in the local profile. Combined with the Ollama
-  # defaults below this means: install Ollama, `ollama pull llama3.1`,
-  # start backend with profile=local → AI Copilot is live, no env vars needed.
-  # Set AGENT_ENABLED=false to disable, or AGENT_RCA_ON_CORRELATION=false to
-  # keep the chat tool active without auto-RCA on every new incident.
+  # AI Copilot — HARDCODED ON in the local profile.
+  # No ${VAR:default} placeholders: an `AGENT_ENABLED=false` env var lingering
+  # in someone's IntelliJ run config or Windows shell was overriding the
+  # placeholder and silently keeping the agent off. Hardcoding means
+  # "local profile = agent on, period." If you genuinely want to disable
+  # the agent, comment these lines OR remove the local profile.
   agent:
-    enabled: ${AGENT_ENABLED:true}
-    mode: ${AGENT_MODE:advisory}
-    max-steps: ${AGENT_MAX_STEPS:8}
-    history-max-messages: ${AGENT_HISTORY_MAX:20}
-    proactive-scan-interval-seconds: ${AGENT_PROACTIVE_SCAN_SECONDS:0}
-    rca-on-correlation: ${AGENT_RCA_ON_CORRELATION:true}
+    enabled: true
+    mode: advisory
+    max-steps: 8
+    history-max-messages: 20
+    proactive-scan-interval-seconds: 0
+    rca-on-correlation: true
     redaction:
-      enabled: ${AGENT_REDACTION_ENABLED:true}
+      enabled: true
 
-  # LLM provider — defaults to LOCAL OLLAMA so no API key is required.
-  # ────────────────────────────────────────────────────────────────────────
-  # To switch to Anthropic, set ONE env var (LLM_PROVIDER) plus the endpoint
-  # details — no code change, no rebuild:
-  #     LLM_PROVIDER=anthropic
-  #     LLM_BASE_URL=https://api.anthropic.com
-  #     LLM_API_KEY=sk-ant-...
-  #     LLM_MODEL=claude-haiku-4-5-20251001
+  # LLM provider — HARDCODED to local Ollama.
+  # To switch to Anthropic without editing this file: set LLM_PROVIDER /
+  # LLM_BASE_URL / LLM_API_KEY / LLM_MODEL as env vars in the IntelliJ run
+  # config — Spring's relaxed binding still applies them on top of these
+  # hardcoded values. The Anthropic env-var path remains a single-flag swap.
   aihub:
-    provider: ${LLM_PROVIDER:ollama}
-    base-url: ${LLM_BASE_URL:http://localhost:11434}
-    api-key: ${LLM_API_KEY:}
-    model: ${LLM_MODEL:qwen2.5-coder:7b}
-    max-tokens: ${LLM_MAX_TOKENS:2000}
-    timeout-ms: ${LLM_TIMEOUT_MS:30000}
-    anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}
+    provider: ollama
+    base-url: http://localhost:11434
+    api-key: ""
+    model: qwen2.5-coder:7b
+    max-tokens: 2000
+    timeout-ms: 60000
+    anthropic-version: "2023-06-01"
 
   knowledge:
     embedding-model: ${KNOWLEDGE_EMBEDDING_MODEL:}
