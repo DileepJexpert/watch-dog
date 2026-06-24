@@ -6,7 +6,7 @@ import com.sentinel.config.SentinelProperties;
 import com.sentinel.correlation.SlidingWindowBuffer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,7 +26,8 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
-@ConditionalOnBean(AgentOrchestrator.class)
+// Property condition, not @ConditionalOnBean — see AgentOrchestrator for why.
+@ConditionalOnProperty(prefix = "sentinel.agent", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ProactiveScanScheduler {
 
@@ -35,7 +36,10 @@ public class ProactiveScanScheduler {
     private final SimpMessagingTemplate messagingTemplate;
     private final SentinelProperties properties;
 
-    @Scheduled(fixedDelayString = "${sentinel.agent.proactive-scan-interval-seconds:0}000")
+    // fixedDelay must be > 0 or Spring fails context startup. When the configured
+    // interval is 0 (proactive scan disabled) we still need a positive cadence, so
+    // we tick hourly and no-op inside scan(); when enabled we use the real interval.
+    @Scheduled(fixedDelayString = "#{${sentinel.agent.proactive-scan-interval-seconds:0} <= 0 ? 3600000 : ${sentinel.agent.proactive-scan-interval-seconds:0} * 1000}")
     public void scan() {
         int interval = properties.getAgent().getProactiveScanIntervalSeconds();
         if (interval <= 0) return;

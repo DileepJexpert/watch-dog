@@ -3,7 +3,7 @@ package com.sentinel.api;
 import com.sentinel.agent.AgentOrchestrator;
 import com.sentinel.config.SentinelProperties;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,7 +20,10 @@ import java.util.Map;
 @RequestMapping("/api/agent")
 @CrossOrigin(origins = "*")
 @RequiredArgsConstructor
-@ConditionalOnMissingBean(AgentOrchestrator.class)
+// Reliable inverse of AgentController's condition. Must NOT be @ConditionalOnMissingBean
+// (order-sensitive): with the agent enabled it could still register and collide with
+// AgentController on GET /api/agent/status. Active only when the agent is disabled.
+@ConditionalOnProperty(prefix = "sentinel.agent", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class AgentStatusFallbackController {
 
     private final SentinelProperties properties;

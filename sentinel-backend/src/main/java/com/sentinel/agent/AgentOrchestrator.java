@@ -11,7 +11,7 @@ import com.sentinel.aihub.model.*;
 import com.sentinel.config.SentinelProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -29,7 +29,12 @@ import java.util.function.Consumer;
  */
 @Slf4j
 @Service
-@ConditionalOnBean(LlmClient.class)
+// Gate on the property, NOT @ConditionalOnBean(LlmClient.class): @ConditionalOnBean
+// is order-sensitive and on a component-scanned @Service it evaluates during the
+// scan, before AihubConfig's llmClient @Bean is registered — so it would silently
+// skip this orchestrator even when the agent is enabled. The property condition is
+// the same one that gates llmClient, so they switch on together.
+@ConditionalOnProperty(prefix = "sentinel.agent", name = "enabled", havingValue = "true")
 public class AgentOrchestrator {
 
     private static final String SYSTEM_PROMPT = """

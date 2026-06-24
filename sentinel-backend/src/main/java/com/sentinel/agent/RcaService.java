@@ -7,7 +7,7 @@ import com.sentinel.config.SentinelProperties;
 import com.sentinel.model.entity.IncidentEntity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -28,7 +28,8 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@ConditionalOnBean(AgentOrchestrator.class)
+// Property condition, not @ConditionalOnBean — see AgentOrchestrator for why.
+@ConditionalOnProperty(prefix = "sentinel.agent", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class RcaService {
 

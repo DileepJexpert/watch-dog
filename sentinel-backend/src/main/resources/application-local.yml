@@ -212,7 +212,10 @@ sentinel:
     api-key: ""
     model: qwen2.5-coder:7b
     max-tokens: 2000
-    timeout-ms: 60000
+    # 7B model on a laptop is slow: a single warm inference here is ~55s and the
+    # cold first call (loads ~4.7GB into memory) exceeds 60s. Each agent step is
+    # one inference, so give a generous per-call ceiling to avoid spurious timeouts.
+    timeout-ms: 120000
     anthropic-version: "2023-06-01"
 
   knowledge:

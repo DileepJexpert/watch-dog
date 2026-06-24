@@ -9,7 +9,7 @@ import com.sentinel.knowledge.KnowledgeDocEntity;
 import com.sentinel.knowledge.KnowledgeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -36,7 +36,8 @@ import java.util.concurrent.Executors;
 @RequestMapping("/api/agent")
 @CrossOrigin(origins = "*")
 @RequiredArgsConstructor
-@ConditionalOnBean(AgentOrchestrator.class)
+// Property condition, not @ConditionalOnBean — see AgentOrchestrator for why.
+@ConditionalOnProperty(prefix = "sentinel.agent", name = "enabled", havingValue = "true")
 public class AgentController {
 
     private final AgentOrchestrator orchestrator;
