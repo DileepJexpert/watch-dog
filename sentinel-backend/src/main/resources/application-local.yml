@@ -186,7 +186,7 @@ sentinel:
     provider: ${LLM_PROVIDER:ollama}
     base-url: ${LLM_BASE_URL:http://localhost:11434}
     api-key: ${LLM_API_KEY:}
-    model: ${LLM_MODEL:llama3.1}
+    model: ${LLM_MODEL:qwen2.5-coder:7b}
     max-tokens: ${LLM_MAX_TOKENS:2000}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
     anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}
