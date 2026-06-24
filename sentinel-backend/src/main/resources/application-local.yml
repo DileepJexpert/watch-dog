@@ -1,19 +1,3 @@
-# SENTINEL "local" profile — IntelliJ / IDE-driven dev runs.
-#
-# This file is a FULL self-contained config. It mirrors application.yml
-# section-by-section, with localhost+remapped infrastructure hardcoded and
-# a few hard safety / dev-friendly overrides applied. Activate with:
-#   IntelliJ Run/Debug Configuration -> "Active profiles": local
-#   OR -Dspring.profiles.active=local
-#   OR SPRING_PROFILES_ACTIVE=local
-#
-# Why localhost+remapped ports: docker-compose in sentinel-backend/ publishes
-# Postgres on 5433, Redis on 6380, Kafka on 9093, ES on 9201, Jaeger on
-# 16687, Grafana on 3001, Kibana on 5602 — so the stack can coexist with
-# other dev stacks already using the default ports.
-#
-# Env-var overrides still work — set DATABASE_URL etc. to point at
-# different infra without editing this file.
 
 spring:
   application:
