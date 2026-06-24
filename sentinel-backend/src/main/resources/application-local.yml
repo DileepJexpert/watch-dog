@@ -75,7 +75,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # `env` exposed in local profile so we can debug which property source
+        # is winning when AGENT_ENABLED, etc. behave unexpectedly. NEVER expose
+        # `env` in production — it leaks every config value including secrets.
+        include: health,info,metrics,prometheus,env,configprops,beans
   endpoint:
     health:
       show-details: always
