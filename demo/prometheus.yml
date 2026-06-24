@@ -45,3 +45,15 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+
+  # === SENTINEL sample-producer (Python, demo/sample-producer/) ===
+  # Stdlib producer that emits logs + traces + metrics directly. Defaults to
+  # :1882. Marked honor_labels so the producer's own service= label survives.
+  - job_name: 'sample-producer'
+    metrics_path: '/metrics'
+    honor_labels: true
+    static_configs:
+      - targets: ['host.docker.internal:1882']
+        labels:
+          service: sample-producer
+          app: sample-producer
