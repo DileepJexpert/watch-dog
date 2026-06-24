@@ -35,9 +35,12 @@ public class ElasticsearchConnector {
      */
     public List<NormalizedEvent> fetchRecentErrorLogs() {
         String indexPattern = properties.getElasticsearch().getIndexPattern();
-        Instant since = Instant.now().minus(properties.getElasticsearch().getPollIntervalSeconds() + 5, ChronoUnit.SECONDS);
+        int windowSec = properties.getElasticsearch().getPollIntervalSeconds() + 5;
+        Instant since = Instant.now().minus(windowSec, ChronoUnit.SECONDS);
 
         String query = buildErrorLogQuery(since.toEpochMilli());
+        log.info("[ingest:es] polling index='{}' window={}s since={}",
+                indexPattern, windowSec, since);
 
         try {
             JsonNode response = elasticsearchWebClient.post()
@@ -48,9 +51,14 @@ public class ElasticsearchConnector {
                     .bodyToMono(JsonNode.class)
                     .block();
 
-            return parseSearchResponse(response);
+            List<NormalizedEvent> events = parseSearchResponse(response);
+            long totalHits = response == null ? 0 : response.path("hits").path("total").path("value").asLong();
+            log.info("[ingest:es] poll OK — hits.total={}, parsed events={}, services={}",
+                    totalHits, events.size(),
+                    events.stream().map(NormalizedEvent::serviceName).distinct().toList());
+            return events;
         } catch (Exception e) {
-            log.warn("Failed to fetch logs from Elasticsearch: {}", e.getMessage());
+            log.warn("[ingest:es] poll FAILED: {}", e.getMessage());
             return List.of();
         }
     }

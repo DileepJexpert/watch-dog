@@ -54,3 +54,16 @@ sentinel:
   # via env (AGENT_ENABLED=true) when you're testing the agent loop.
   agent:
     enabled: false
+
+# Surface every step of the ingest -> correlate -> incident -> ws-push pipeline
+# at INFO. With this on, the IntelliJ console becomes a live trace and any
+# break in the chain (ES poll empty, no service registered, no rule firing,
+# WS not pushing) shows up as a missing log line.
+logging:
+  level:
+    com.sentinel.ingestion: INFO
+    com.sentinel.correlation: INFO
+    com.sentinel.normalization: INFO
+    com.sentinel.api.WebSocketEventController: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

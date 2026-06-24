@@ -58,6 +58,12 @@ public class CorrelationEngine {
         if (normalized != null) {
             windowBuffer.add(normalized);
             updateServiceHealth(normalized);
+            log.info("[correlation:event] service={} type={} severity={} window-size={} msg='{}'",
+                    normalized.serviceName(), normalized.signalType(), normalized.severity(),
+                    windowBuffer.getWindow(normalized.serviceName()).size(),
+                    truncate(normalized.message(), 80));
+        } else {
+            log.debug("[correlation:event] dropped after normalization");
         }
     }
 
@@ -67,14 +73,29 @@ public class CorrelationEngine {
     @Scheduled(fixedDelay = 30_000)
     @Transactional
     public void evaluateRules() {
-        for (String serviceName : windowBuffer.getActiveServices()) {
+        var activeServices = windowBuffer.getActiveServices();
+        log.info("[correlation:eval] tick — activeServices={} ruleCount={}",
+                activeServices, correlationRules.size());
+
+        int rulesFiredThisTick = 0;
+        for (String serviceName : activeServices) {
             List<NormalizedEvent> windowEvents = windowBuffer.getWindow(serviceName);
-            if (windowEvents.isEmpty()) continue;
+            if (windowEvents.isEmpty()) {
+                log.debug("[correlation:eval] {} -> empty window, skipping", serviceName);
+                continue;
+            }
+            log.debug("[correlation:eval] {} -> evaluating {} events vs {} rules",
+                    serviceName, windowEvents.size(), correlationRules.size());
 
             for (CorrelationRule rule : correlationRules) {
                 try {
                     Optional<IncidentEntity> incident = rule.evaluate(windowEvents, serviceName);
-                    incident.ifPresent(i -> handleNewIncident(i, serviceName));
+                    if (incident.isPresent()) {
+                        rulesFiredThisTick++;
+                        log.info("[correlation:fire] rule={} service={} title='{}'",
+                                rule.getName(), serviceName, incident.get().getTitle());
+                        handleNewIncident(incident.get(), serviceName);
+                    }
                 } catch (Exception e) {
                     log.warn("Rule {} failed for service {}: {}", rule.getName(), serviceName, e.getMessage());
                 }
@@ -83,6 +104,15 @@ public class CorrelationEngine {
             // Cleanup expired events
             windowBuffer.cleanup(serviceName);
         }
+
+        if (rulesFiredThisTick > 0) {
+            log.info("[correlation:eval] tick DONE — rules fired this tick: {}", rulesFiredThisTick);
+        }
+    }
+
+    private static String truncate(String s, int n) {
+        if (s == null) return "";
+        return s.length() > n ? s.substring(0, n) + "..." : s;
     }
 
     private void handleNewIncident(IncidentEntity incident, String serviceName) {
@@ -96,14 +126,16 @@ public class CorrelationEngine {
         if (alreadyOpen) return;
 
         IncidentEntity saved = incidentRepository.save(incident);
-        log.warn("NEW INCIDENT [{}] {} - {} for service {}",
-                saved.getSeverity(), saved.getId(), saved.getTitle(), serviceName);
+        log.warn("[incident:new] id={} severity={} title='{}' service={}",
+                saved.getId(), saved.getSeverity(), saved.getTitle(), serviceName);
 
         // Update service health to RED
         updateServiceHealthStatus(serviceName, ServiceStatus.RED, saved.getId().toString());
+        log.info("[incident:health] service={} -> RED", serviceName);
 
         // Send real-time WebSocket notification
         messagingTemplate.convertAndSend("/topic/incidents", saved);
+        log.info("[incident:ws-push] pushed incident {} to /topic/incidents", saved.getId());
 
         // Trigger alerting
         alertingService.alert(saved);

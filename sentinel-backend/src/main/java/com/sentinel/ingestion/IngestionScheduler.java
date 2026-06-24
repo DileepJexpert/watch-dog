@@ -125,9 +125,13 @@ public class IngestionScheduler {
     }
 
     private void publish(List<NormalizedEvent> events, String source) {
-        if (events.isEmpty()) return;
+        if (events.isEmpty()) {
+            log.debug("[ingest:{}] nothing to publish", source);
+            return;
+        }
 
-        log.debug("Publishing {} events from {}", events.size(), source);
+        log.info("[ingest:{}] publishing {} event(s) -> Kafka topic '{}'",
+                source, events.size(), KafkaConfig.EVENTS_TOPIC);
         for (NormalizedEvent event : events) {
             kafkaTemplate.send(KafkaConfig.EVENTS_TOPIC, event.serviceName(), event);
         }
