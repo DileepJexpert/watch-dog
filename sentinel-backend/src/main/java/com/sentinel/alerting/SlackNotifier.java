@@ -37,6 +37,24 @@ public class SlackNotifier {
         sendMessage(buildMessage(incident, ":white_check_mark: RESOLVED", "#00C851"));
     }
 
+    /**
+     * Posts an AI-summarized health digest as a Slack message. Falls through to
+     * a no-op when the webhook isn't configured so the scheduler can still run.
+     */
+    public void sendHealthDigest(String title, String body) {
+        Map<String, Object> payload = Map.of(
+                "channel", properties.getAlerting().getSlack().getChannel(),
+                "attachments", List.of(Map.of(
+                        "color", "#2E86AB",
+                        "title", title,
+                        "text", body,
+                        "footer", "SENTINEL daily digest",
+                        "mrkdwn_in", List.of("text")
+                ))
+        );
+        sendMessage(payload);
+    }
+
     private Map<String, Object> buildMessage(IncidentEntity incident, String prefix, String color) {
         String text = String.format("%s - %s\n*Service:* %s\n*Incident:* %s\n*Rule:* %s",
                 prefix, incident.getSeverity().getLabel(),

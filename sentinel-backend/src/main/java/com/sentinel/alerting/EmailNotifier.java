@@ -43,6 +43,24 @@ public class EmailNotifier {
         }
     }
 
+    /**
+     * Sends the daily AI-summarized health digest to one or more recipients.
+     * No-op when the list is empty so the scheduler can still run quietly.
+     */
+    public void sendDailyDigest(String subject, String body, java.util.List<String> recipients) {
+        if (recipients == null || recipients.isEmpty()) return;
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setTo(recipients.toArray(new String[0]));
+            message.setSubject(subject);
+            message.setText(body);
+            mailSender.send(message);
+            log.debug("Daily digest sent to {} recipient(s)", recipients.size());
+        } catch (Exception e) {
+            log.warn("Failed to send daily digest: {}", e.getMessage());
+        }
+    }
+
     private String buildEmailBody(IncidentEntity incident) {
         return String.format("""
                 SENTINEL Incident Alert

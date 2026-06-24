@@ -200,3 +200,39 @@ sentinel:
     url: ${APM_URL:}
     api-key: ${APM_API_KEY:}
     actuator-targets: []
+
+  # Daily AI-summarized health digest. Disabled by default — enable to receive
+  # a morning Slack + Email report covering the last lookbackHours of activity.
+  digest:
+    daily:
+      enabled: ${DIGEST_DAILY_ENABLED:false}
+      cron: ${DIGEST_DAILY_CRON:0 0 9 * * *}      # 09:00 UTC every day
+      lookback-hours: ${DIGEST_LOOKBACK_HOURS:24}
+      use-ai: ${DIGEST_USE_AI:true}                # falls back to template if no LlmClient
+      slack: ${DIGEST_SLACK:true}
+      email-recipients: ${DIGEST_EMAIL_RECIPIENTS:}
+      max-incidents-in-prompt: 50
+
+  # First-class Kafka monitoring (consumer-group lag + broker availability).
+  # Disabled by default; enable to start polling AdminClient on the configured
+  # bootstrap servers. The lag metric flows into MessageQueueBacklogRule.
+  kafka:
+    enabled: ${KAFKA_INGEST_ENABLED:false}
+    bootstrap-servers: ${KAFKA_INGEST_BOOTSTRAP:localhost:9092}
+    poll-interval-seconds: 30
+    admin-timeout-ms: 5000
+    consumer-groups: {}      # service-name -> consumer-group-id, e.g.
+                             #   payments-svc: payments-consumer
+    topics: []               # optional whitelist; empty = all topics the group has committed to
+
+  # First-class ActiveMQ monitoring via Jolokia REST. Disabled by default.
+  # Queue-depth metric flows into the same MessageQueueBacklogRule as Kafka lag.
+  activemq:
+    enabled: ${AMQ_INGEST_ENABLED:false}
+    jolokia-url: ${AMQ_JOLOKIA_URL:http://localhost:8161/api/jolokia}
+    username: ${AMQ_USER:admin}
+    password: ${AMQ_PASSWORD:admin}
+    broker-name: ${AMQ_BROKER_NAME:localhost}
+    poll-interval-seconds: 30
+    queues: {}               # service-name -> queue-name, e.g.
+                             #   payments-svc: payment.queue

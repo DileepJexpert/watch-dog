@@ -25,6 +25,9 @@ public class SentinelProperties {
     private KnowledgeConfig knowledge = new KnowledgeConfig();
     private DbTargetsConfig dbTargets = new DbTargetsConfig();
     private ApmConfig apm = new ApmConfig();
+    private DigestConfig digest = new DigestConfig();
+    private KafkaIngestConfig kafka = new KafkaIngestConfig();
+    private ActiveMqConfig activemq = new ActiveMqConfig();
 
     @Data
     public static class ElasticsearchConfig {
@@ -189,5 +192,64 @@ public class SentinelProperties {
         private String url = "";
         private String apiKey = "";
         private List<String> actuatorTargets = new ArrayList<>();
+    }
+
+    /**
+     * Daily / weekly AI health digest.
+     * Daily report is opt-in via {@code sentinel.digest.daily.enabled=true}.
+     */
+    @Data
+    public static class DigestConfig {
+        private DailyConfig daily = new DailyConfig();
+
+        @Data
+        public static class DailyConfig {
+            private boolean enabled = false;
+            /** Cron expression; default 09:00 UTC every day. */
+            private String cron = "0 0 9 * * *";
+            /** How far back to look when summarizing. */
+            private int lookbackHours = 24;
+            /** Use the AI Copilot to summarize if true and an LlmClient bean is present. */
+            private boolean useAi = true;
+            /** Channels to send to. Empty = log only. */
+            private List<String> emailRecipients = new ArrayList<>();
+            private boolean slack = true;
+            /** Max number of incidents fed to the LLM (token guard). */
+            private int maxIncidentsInPrompt = 50;
+        }
+    }
+
+    /**
+     * First-class Kafka monitoring: polls AdminClient for per-topic consumer-group
+     * lag, partition state, broker availability. Emits NormalizedEvents the
+     * existing MessageQueueBacklogRule and ServiceDownRule already consume.
+     */
+    @Data
+    public static class KafkaIngestConfig {
+        private boolean enabled = false;
+        private String bootstrapServers = "localhost:9092";
+        private int pollIntervalSeconds = 30;
+        /** Map of "service-name" -> "consumer-group-id" to monitor. */
+        private Map<String, String> consumerGroups = new HashMap<>();
+        /** Optional explicit topic list. If empty, every topic the broker exposes is checked. */
+        private List<String> topics = new ArrayList<>();
+        private int adminTimeoutMs = 5_000;
+    }
+
+    /**
+     * First-class ActiveMQ monitoring via Jolokia REST. Emits queue-depth metrics
+     * that flow into MessageQueueBacklogRule.
+     */
+    @Data
+    public static class ActiveMqConfig {
+        private boolean enabled = false;
+        /** Jolokia endpoint, e.g. http://activemq:8161/api/jolokia */
+        private String jolokiaUrl = "http://localhost:8161/api/jolokia";
+        private String username = "admin";
+        private String password = "admin";
+        private String brokerName = "localhost";
+        private int pollIntervalSeconds = 30;
+        /** Map of "service-name" -> "queue-name" to monitor. */
+        private Map<String, String> queues = new HashMap<>();
     }
 }

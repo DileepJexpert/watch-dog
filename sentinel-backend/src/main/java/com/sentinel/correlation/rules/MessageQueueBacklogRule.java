@@ -27,7 +27,12 @@ public class MessageQueueBacklogRule implements CorrelationRule {
     public Optional<IncidentEntity> evaluate(List<NormalizedEvent> windowEvents, String serviceName) {
         return windowEvents.stream()
                 .filter(e -> e.signalType() == SignalType.METRIC)
-                .filter(e -> "consumer_lag".equals(e.attributes().get("metric_name")))
+                .filter(e -> {
+                    // Match both Kafka consumer lag (from KafkaConnector) and
+                    // ActiveMQ queue depth (from ActiveMqConnector).
+                    Object name = e.attributes().get("metric_name");
+                    return "consumer_lag".equals(name) || "queue_depth".equals(name);
+                })
                 .filter(e -> {
                     Object val = e.attributes().get("metric_value");
                     return val instanceof Number && ((Number) val).doubleValue() > LAG_WARNING_THRESHOLD;
@@ -35,10 +40,12 @@ public class MessageQueueBacklogRule implements CorrelationRule {
                 .findFirst()
                 .map(e -> {
                     double lag = ((Number) e.attributes().get("metric_value")).doubleValue();
+                    String metric = String.valueOf(e.attributes().get("metric_name"));
                     Severity severity = lag > LAG_CRITICAL_THRESHOLD ? Severity.P1_CRITICAL : Severity.P2_HIGH;
                     IncidentEntity incident = new IncidentEntity();
                     incident.setServiceName(serviceName);
-                    incident.setTitle(String.format("Message queue backlog for %s: %.0f messages behind", serviceName, lag));
+                    incident.setTitle(String.format("Message queue backlog for %s (%s): %.0f messages behind",
+                            serviceName, metric, lag));
                     incident.setSeverity(severity);
                     incident.setStatus(IncidentStatus.OPEN);
                     incident.setCorrelationRule(getName());
