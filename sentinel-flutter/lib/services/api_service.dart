@@ -42,7 +42,11 @@ class ApiService {
       Uri.parse('$baseUrl/api/remediation/log?size=$size'),
     );
     if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
+      // This endpoint returns a Spring Page object ({content: [...], ...}),
+      // not a bare list. Read .content; tolerate a plain list too.
+      final decoded = jsonDecode(response.body);
+      final List<dynamic> data =
+          decoded is List ? decoded : (decoded['content'] as List<dynamic>);
       return data.map((e) => RemediationLog.fromJson(e)).toList();
     }
     throw ApiException(
