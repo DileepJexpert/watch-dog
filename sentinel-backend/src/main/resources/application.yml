@@ -170,11 +170,21 @@ sentinel:
       enabled: ${AGENT_REDACTION_ENABLED:true}
 
   # Model endpoint configuration (FR-1: env-driven, no code change to swap providers)
+  # ────────────────────────────────────────────────────────────────────────
+  # Defaults: Ollama on the host. Zero setup once Ollama is installed
+  # (`ollama pull llama3.1`).
+  #
+  # To switch to Anthropic, just set LLM_PROVIDER=anthropic plus the
+  # endpoint vars below — single env-var flag, no code change.
+  #   LLM_PROVIDER=anthropic
+  #   LLM_BASE_URL=https://api.anthropic.com
+  #   LLM_API_KEY=sk-ant-...
+  #   LLM_MODEL=claude-haiku-4-5-20251001
   aihub:
-    provider: ${LLM_PROVIDER:anthropic}
-    base-url: ${LLM_BASE_URL:}
+    provider: ${LLM_PROVIDER:ollama}
+    base-url: ${LLM_BASE_URL:http://localhost:11434}
     api-key: ${LLM_API_KEY:}
-    model: ${LLM_MODEL:}
+    model: ${LLM_MODEL:llama3.1}
     max-tokens: ${LLM_MAX_TOKENS:2000}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
     anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}

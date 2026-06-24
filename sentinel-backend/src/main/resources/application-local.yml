@@ -159,23 +159,34 @@ sentinel:
     retraining-interval-hours: 24
     min-samples-for-detection: 30
 
-  # AI Copilot OFF by default in the local profile. Set AGENT_ENABLED=true
-  # in your IntelliJ run-config env to flip it on when testing the agent loop.
+  # AI Copilot ON by default in the local profile. Combined with the Ollama
+  # defaults below this means: install Ollama, `ollama pull llama3.1`,
+  # start backend with profile=local → AI Copilot is live, no env vars needed.
+  # Set AGENT_ENABLED=false to disable, or AGENT_RCA_ON_CORRELATION=false to
+  # keep the chat tool active without auto-RCA on every new incident.
   agent:
-    enabled: ${AGENT_ENABLED:false}
+    enabled: ${AGENT_ENABLED:true}
     mode: ${AGENT_MODE:advisory}
     max-steps: ${AGENT_MAX_STEPS:8}
     history-max-messages: ${AGENT_HISTORY_MAX:20}
     proactive-scan-interval-seconds: ${AGENT_PROACTIVE_SCAN_SECONDS:0}
-    rca-on-correlation: ${AGENT_RCA_ON_CORRELATION:false}
+    rca-on-correlation: ${AGENT_RCA_ON_CORRELATION:true}
     redaction:
       enabled: ${AGENT_REDACTION_ENABLED:true}
 
+  # LLM provider — defaults to LOCAL OLLAMA so no API key is required.
+  # ────────────────────────────────────────────────────────────────────────
+  # To switch to Anthropic, set ONE env var (LLM_PROVIDER) plus the endpoint
+  # details — no code change, no rebuild:
+  #     LLM_PROVIDER=anthropic
+  #     LLM_BASE_URL=https://api.anthropic.com
+  #     LLM_API_KEY=sk-ant-...
+  #     LLM_MODEL=claude-haiku-4-5-20251001
   aihub:
-    provider: ${LLM_PROVIDER:anthropic}
-    base-url: ${LLM_BASE_URL:}
+    provider: ${LLM_PROVIDER:ollama}
+    base-url: ${LLM_BASE_URL:http://localhost:11434}
     api-key: ${LLM_API_KEY:}
-    model: ${LLM_MODEL:}
+    model: ${LLM_MODEL:llama3.1}
     max-tokens: ${LLM_MAX_TOKENS:2000}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
     anthropic-version: ${LLM_ANTHROPIC_VERSION:2023-06-01}
