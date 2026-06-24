@@ -117,10 +117,33 @@ sentinel:
     api-key: ${GRAFANA_API_KEY:}
     poll-interval-seconds: 15
 
+  # Active health probes — every 10s SENTINEL hits the `url` on each target.
+  # A timeout / connection-refused / non-200 emits a PROBE event with
+  # severity P1_CRITICAL, which ServiceDownRule turns into an incident.
+  # That's how "all pods of service X went down" becomes a P1 card on
+  # the dashboard within ~10 seconds — no need to wait for the next
+  # ingestion poll.
+  #
+  # Add a row per local service you want monitored. Remove a target to
+  # stop probing it.
   health-probe:
     interval-seconds: 10
     timeout-seconds: 5
-    targets: []
+    targets:
+      # Spring Boot sample-app on host port 1881 (mvn spring-boot:run)
+      - name: my-spring-boot-app
+        url: http://localhost:1881/actuator/health
+        type: HTTP
+      # Python sample-producer self-exposes /metrics on 1882; the producer
+      # has no /health endpoint, but a successful /metrics fetch proves
+      # the process is alive.
+      - name: sample-producer
+        url: http://localhost:1882/metrics
+        type: HTTP
+      # SENTINEL backend self-check (catches its own deadlocks)
+      - name: sentinel-backend
+        url: http://localhost:8080/actuator/health
+        type: HTTP
 
   correlation:
     window-minutes: 5
