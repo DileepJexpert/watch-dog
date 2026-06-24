@@ -6,6 +6,11 @@ import 'package:stomp_dart_client/stomp_frame.dart';
 import '../models/models.dart';
 
 class WebSocketService {
+  static const defaultUrl = String.fromEnvironment(
+    'SENTINEL_WS_URL',
+    defaultValue: 'http://localhost:8080/ws/events',
+  );
+
   final String url;
   StompClient? _client;
   final _incidentController = StreamController<Incident>.broadcast();
@@ -16,7 +21,7 @@ class WebSocketService {
   // SockJS does its handshake over HTTP and upgrades to WebSocket itself,
   // so the URL must be http(s):// — passing ws:// throws
   // "The url has to start with http/https".
-  WebSocketService({this.url = 'http://localhost:8080/ws/events'});
+  WebSocketService({String? url}) : url = url ?? defaultUrl;
 
   Stream<Incident> get incidentStream => _incidentController.stream;
   Stream<bool> get connectionStream => _connectionController.stream;

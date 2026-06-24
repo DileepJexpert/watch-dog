@@ -17,6 +17,8 @@ import java.util.Optional;
 @Component
 public class ConnectionPoolExhaustionRule implements CorrelationRule {
 
+    private static final long LOG_ONLY_ERROR_THRESHOLD = 3;
+
     @Override
     public String getName() { return "CONNECTION_POOL_EXHAUSTION"; }
 
@@ -34,11 +36,16 @@ public class ConnectionPoolExhaustionRule implements CorrelationRule {
                 .filter(e -> e.signalType() == SignalType.METRIC)
                 .anyMatch(e -> Boolean.TRUE.equals(e.attributes().get("latency_degradation")));
 
-        if (poolExhausted && highLatency) {
+        long dbConnectionErrorCount = windowEvents.stream()
+                .filter(e -> e.signalType() == SignalType.LOG)
+                .filter(e -> Boolean.TRUE.equals(e.attributes().get("db_connection_error")))
+                .count();
+
+        if ((poolExhausted && highLatency) || dbConnectionErrorCount >= LOG_ONLY_ERROR_THRESHOLD) {
             IncidentEntity incident = new IncidentEntity();
             incident.setServiceName(serviceName);
             incident.setTitle("Connection pool exhaustion causing latency spikes on " + serviceName);
-            incident.setSeverity(Severity.P1_CRITICAL);
+            incident.setSeverity(highLatency ? Severity.P1_CRITICAL : Severity.P2_HIGH);
             incident.setStatus(IncidentStatus.OPEN);
             incident.setCorrelationRule(getName());
             incident.setCorrelatedSignalIds(windowEvents.stream().map(NormalizedEvent::id).toList());

@@ -1,0 +1,12 @@
+# Flutter / Dart generated artifacts — do not commit
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# IDE
+.idea/
+*.iml

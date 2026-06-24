@@ -3,11 +3,17 @@ import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
 class ApiService {
+  static const defaultBaseUrl = String.fromEnvironment(
+    'SENTINEL_API_URL',
+    defaultValue: 'http://localhost:8080',
+  );
+
   final String baseUrl;
   final http.Client _client;
 
-  ApiService({this.baseUrl = 'http://localhost:8080'})
-      : _client = http.Client();
+  ApiService({String? baseUrl})
+      : baseUrl = baseUrl ?? defaultBaseUrl,
+        _client = http.Client();
 
   Future<List<ServiceHealth>> fetchServices() async {
     final response = await _client.get(

@@ -94,7 +94,7 @@ public class ElasticsearchConnector {
                   "query": {
                     "bool": {
                       "must": [
-                        {"terms": {"log.level": ["ERROR", "WARN", "FATAL"]}},
+                        {"terms": {"log.level.keyword": ["ERROR", "WARN", "FATAL"]}},
                         {"range": {"@timestamp": {"gte": %d, "format": "epoch_millis"}}}
                       ]
                     }
@@ -112,7 +112,7 @@ public class ElasticsearchConnector {
                   "query": {
                     "bool": {
                       "must": [
-                        {"term": {"log.level": "ERROR"}},
+                        {"term": {"log.level.keyword": "ERROR"}},
                         {"range": {"@timestamp": {"gte": %d, "format": "epoch_millis"}}}
                       ]
                     }
@@ -158,9 +158,18 @@ public class ElasticsearchConnector {
                 attrs.put("oom_detected", true);
             }
 
-            // Detect DB connection errors
-            if (message.contains("Connection refused") || message.contains("connection pool") ||
-                    message.contains("JDBC") || errorMsg.contains("connection")) {
+            // Detect DB connection errors. Keep this case-insensitive because
+            // Logback/Filebeat can preserve framework-specific casing such as
+            // "HikariPool" or "JdbcSQLException".
+            String lowerMessage = message.toLowerCase();
+            String lowerErrorMsg = errorMsg.toLowerCase();
+            if (lowerMessage.contains("connection refused") ||
+                    lowerMessage.contains("connection pool") ||
+                    lowerMessage.contains("connection is not available") ||
+                    lowerMessage.contains("hikaripool") ||
+                    lowerMessage.contains("jdbc") ||
+                    lowerMessage.contains("timeout waiting for idle") ||
+                    lowerErrorMsg.contains("connection")) {
                 attrs.put("db_connection_error", true);
             }
 
@@ -198,7 +207,7 @@ public class ElasticsearchConnector {
                   "query": {
                     "bool": {
                       "must": [
-                        {"term":  {"log.level": "ERROR"}},
+                        {"term":  {"log.level.keyword": "ERROR"}},
                         {"term":  {"service.name.keyword": "%s"}},
                         {"exists": {"field": "error.stack_trace"}}
                       ]

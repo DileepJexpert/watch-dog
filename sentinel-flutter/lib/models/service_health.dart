@@ -25,12 +25,15 @@ class ServiceHealth {
     return ServiceHealth(
       serviceName: json['serviceName'] as String,
       status: ServiceStatus.fromString(json['status'] as String),
-      errorRate: (json['errorRate'] as num).toDouble(),
-      latencyP95: (json['latencyP95'] as num).toDouble(),
-      latencyP99: (json['latencyP99'] as num).toDouble(),
-      requestRate: (json['requestRate'] as num).toDouble(),
+      errorRate: _numOrZero(json['errorRate']),
+      latencyP95: _numOrZero(json['latencyP95']),
+      latencyP99: _numOrZero(json['latencyP99']),
+      requestRate: _numOrZero(json['requestRate']),
       lastUpdated: DateTime.parse(json['lastUpdated'] as String),
       activeIncidentId: json['activeIncidentId'] as String?,
     );
   }
+
+  static double _numOrZero(Object? value) =>
+      value is num ? value.toDouble() : 0;
 }
