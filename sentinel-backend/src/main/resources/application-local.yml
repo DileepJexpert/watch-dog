@@ -243,8 +243,20 @@ sentinel:
     top-k: ${KNOWLEDGE_TOP_K:5}
     pgvector-enabled: ${KNOWLEDGE_PGVECTOR_ENABLED:false}
 
+  # Read-only DB targets the agent's query_database tool can hit.
+  # `sentinel` is SENTINEL's OWN database — exposing it lets the agent answer
+  # questions like "how many incidents fired in the last hour?" directly via
+  # SQL on the incidents table, instead of trying to aggregate via search_logs
+  # (which weaker models hallucinate the schema for).
   db-targets:
-    targets: []
+    targets:
+      - name: sentinel
+        url: jdbc:postgresql://localhost:5433/sentinel
+        username: sentinel
+        password: sentinel
+        driverClassName: org.postgresql.Driver
+        queryRowLimit: 200
+        queryTimeoutSeconds: 5
 
   apm:
     url: ${APM_URL:}
