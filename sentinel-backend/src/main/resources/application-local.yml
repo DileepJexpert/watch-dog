@@ -202,15 +202,32 @@ sentinel:
       enabled: true
 
   # LLM provider — HARDCODED to local Ollama.
-  # To switch to Anthropic without editing this file: set LLM_PROVIDER /
-  # LLM_BASE_URL / LLM_API_KEY / LLM_MODEL as env vars in the IntelliJ run
-  # config — Spring's relaxed binding still applies them on top of these
-  # hardcoded values. The Anthropic env-var path remains a single-flag swap.
+  # ────────────────────────────────────────────────────────────────────────
+  # Model selection guide — picked for AGENTIC TOOL USE, not coding:
+  #
+  #   llama3.1:8b           ★ recommended for laptops — strong tool calling,
+  #                           ~4.7GB, runs on 8GB+ RAM
+  #   qwen2.5:14b-instruct  ★ best Ollama option for tool use,
+  #                           ~8.4GB, needs 16GB+ RAM
+  #   llama3.2:3b           lightweight fallback if RAM is tight, ~2GB
+  #
+  # AVOID for the agent:
+  #   qwen2.5-coder:*       trained for code completion, refuses tool calls
+  #   deepseek-coder:*      same problem — code model, not agent model
+  #
+  # To switch model at runtime without editing this file, use the model
+  # dropdown in the AI Copilot tab, or POST /api/agent/model { "model": "..." }
+  #
+  # To switch to Anthropic for production-grade quality, set:
+  #   LLM_PROVIDER=anthropic
+  #   LLM_BASE_URL=https://api.anthropic.com
+  #   LLM_API_KEY=sk-ant-...
+  #   LLM_MODEL=claude-haiku-4-5-20251001
   aihub:
     provider: ollama
     base-url: http://localhost:11434
     api-key: ""
-    model: qwen2.5-coder:7b
+    model: llama3.1:8b
     max-tokens: 2000
     # 7B model on a laptop is slow: a single warm inference here is ~55s and the
     # cold first call (loads ~4.7GB into memory) exceeds 60s. Each agent step is
