@@ -16,14 +16,15 @@ enum Severity {
 }
 
 enum IncidentStatus {
-  open('OPEN'),
-  investigating('INVESTIGATING'),
-  autoRemediated('AUTO_REMEDIATED'),
-  resolved('RESOLVED'),
-  escalated('ESCALATED');
+  open('OPEN', 'Open'),
+  investigating('INVESTIGATING', 'Investigating'),
+  autoRemediated('AUTO_REMEDIATED', 'Auto-remediated'),
+  resolved('RESOLVED', 'Resolved'),
+  escalated('ESCALATED', 'Escalated');
 
-  const IncidentStatus(this.value);
+  const IncidentStatus(this.value, this.label);
   final String value;
+  final String label;
 
   static IncidentStatus fromString(String s) =>
       IncidentStatus.values.firstWhere((e) => e.value == s, orElse: () => IncidentStatus.open);

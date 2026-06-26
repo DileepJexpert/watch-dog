@@ -2,9 +2,11 @@ import 'dart:developer' as developer;
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/agent_websocket_service.dart';
+import '../services/sentinel_provider.dart';
 
 void _dbg(String msg) {
   // kDebugMode only fires in `flutter run` (debug) builds — release builds stay silent.
@@ -55,6 +57,23 @@ class _AgentScreenState extends State<AgentScreen> {
         'ui-${List.generate(8, (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[rand.nextInt(36)]).join()}';
 
     _refreshStatus();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The dashboard's incident-detail modal can stash a prefilled question via
+    // SentinelProvider.switchToCopilot(withQuestion: ...). Consume it after the
+    // first frame so the input controller is mounted.
+    final pending = context.read<SentinelProvider>().consumePendingAgentQuestion();
+    if (pending != null && pending.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _inputCtl.text = pending;
+        _inputCtl.selection =
+            TextSelection.collapsed(offset: _inputCtl.text.length);
+      });
+    }
   }
 
   @override

@@ -46,8 +46,6 @@ class SentinelHome extends StatefulWidget {
 }
 
 class _SentinelHomeState extends State<SentinelHome> {
-  int _selectedIndex = 0;
-
   static const _tabs = [
     _TabInfo(icon: Icons.dashboard, label: 'Dashboard'),
     _TabInfo(icon: Icons.warning_amber, label: 'Incidents'),
@@ -103,9 +101,10 @@ class _SentinelHomeState extends State<SentinelHome> {
                 // Nav items
                 ...List.generate(_tabs.length, (i) {
                   final tab = _tabs[i];
-                  final selected = _selectedIndex == i;
+                  final selected =
+                      context.watch<SentinelProvider>().activeTabIndex == i;
                   return InkWell(
-                    onTap: () => setState(() => _selectedIndex = i),
+                    onTap: () => context.read<SentinelProvider>().switchToTab(i),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 12),
@@ -182,9 +181,11 @@ class _SentinelHomeState extends State<SentinelHome> {
               ],
             ),
           ),
-          // Main content
+          // Main content — driven by provider's activeTabIndex so any widget
+          // can switch tabs (e.g. dashboard's "Ask Copilot" button).
           Expanded(
-            child: _screens[_selectedIndex],
+            child:
+                _screens[context.watch<SentinelProvider>().activeTabIndex],
           ),
         ],
       ),

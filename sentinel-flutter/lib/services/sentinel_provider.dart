@@ -16,6 +16,33 @@ class SentinelProvider extends ChangeNotifier {
   bool wsConnected = false;
   String? error;
 
+  // Cross-screen navigation: the dashboard's incident-detail modal calls
+  // switchToCopilot(withQuestion: ...) to jump to the AI Copilot tab AND
+  // pre-fill its input box. The AgentScreen consumes the pending question
+  // on first build so it's only injected once.
+  int activeTabIndex = 0;
+  String? _pendingAgentQuestion;
+
+  void switchToTab(int index) {
+    if (activeTabIndex == index) return;
+    activeTabIndex = index;
+    notifyListeners();
+  }
+
+  /// Jump to the AI Copilot tab (index 4) and stash a question for it to send.
+  void switchToCopilot({String? withQuestion}) {
+    _pendingAgentQuestion = withQuestion;
+    activeTabIndex = 4;
+    notifyListeners();
+  }
+
+  /// Returns the pending question and clears it. Call from AgentScreen.didChangeDependencies.
+  String? consumePendingAgentQuestion() {
+    final q = _pendingAgentQuestion;
+    _pendingAgentQuestion = null;
+    return q;
+  }
+
   Timer? _pollTimer;
   StreamSubscription<Incident>? _incidentSub;
   StreamSubscription<bool>? _connectionSub;
