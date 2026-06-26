@@ -64,6 +64,47 @@ public class ElasticsearchConnector {
     }
 
     /**
+     * Agent-facing search over a configurable lookback window. The ingestion
+     * poller's {@link #fetchRecentErrorLogs()} only looks back ~35s (its poll
+     * interval), which is right for streaming but useless when the AI Copilot
+     * is asked "what errors happened today?" — by then the events are minutes
+     * or hours old. This variant lets the agent pick a real window and an
+     * optional service filter, applied server-side in the ES query.
+     *
+     * @param lookbackMinutes how far back to search (capped 1..10080 = 7 days)
+     * @param serviceFilter   optional exact service name; null/blank = all
+     * @param limit           max docs to return (capped 1..500)
+     */
+    public List<NormalizedEvent> searchErrorLogs(int lookbackMinutes, String serviceFilter, int limit) {
+        String indexPattern = properties.getElasticsearch().getIndexPattern();
+        int window = Math.max(1, Math.min(lookbackMinutes, 7 * 24 * 60));
+        int size = Math.max(1, Math.min(limit, 500));
+        Instant since = Instant.now().minus(window, ChronoUnit.MINUTES);
+
+        String query = buildErrorLogQuery(since.toEpochMilli(), serviceFilter, size);
+        log.info("[agent:es] search window={}min service={} limit={} since={}",
+                window, serviceFilter == null ? "*" : serviceFilter, size, since);
+
+        try {
+            JsonNode response = elasticsearchWebClient.post()
+                    .uri("/" + indexPattern + "/_search")
+                    .header("Content-Type", "application/json")
+                    .bodyValue(query)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block();
+
+            List<NormalizedEvent> events = parseSearchResponse(response);
+            long totalHits = response == null ? 0 : response.path("hits").path("total").path("value").asLong();
+            log.info("[agent:es] search OK — hits.total={}, parsed events={}", totalHits, events.size());
+            return events;
+        } catch (Exception e) {
+            log.warn("[agent:es] search FAILED: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * Fetches error count aggregations per service for anomaly detection.
      */
     public Map<String, Long> fetchErrorCountsByService() {
@@ -89,21 +130,32 @@ public class ElasticsearchConnector {
     }
 
     private String buildErrorLogQuery(long fromMs) {
+        return buildErrorLogQuery(fromMs, null, 500);
+    }
+
+    private String buildErrorLogQuery(long fromMs, String serviceFilter, int size) {
+        // Optional service filter as an extra `must` term. Uses .keyword for an
+        // exact match (the analyzed service.name field would tokenize on dashes).
+        String serviceClause = "";
+        if (serviceFilter != null && !serviceFilter.isBlank()) {
+            serviceClause = """
+                    ,{"term": {"service.name.keyword": "%s"}}""".formatted(serviceFilter.trim());
+        }
         return """
                 {
                   "query": {
                     "bool": {
                       "must": [
                         {"terms": {"log.level.keyword": ["ERROR", "WARN", "FATAL"]}},
-                        {"range": {"@timestamp": {"gte": %d, "format": "epoch_millis"}}}
+                        {"range": {"@timestamp": {"gte": %d, "format": "epoch_millis"}}}%s
                       ]
                     }
                   },
-                  "size": 500,
+                  "size": %d,
                   "sort": [{"@timestamp": {"order": "desc"}}],
                   "_source": ["@timestamp", "service.name", "log.level", "message", "error.message", "error.type"]
                 }
-                """.formatted(fromMs);
+                """.formatted(fromMs, serviceClause, size);
     }
 
     private String buildAggregationQuery(long fromMs) {

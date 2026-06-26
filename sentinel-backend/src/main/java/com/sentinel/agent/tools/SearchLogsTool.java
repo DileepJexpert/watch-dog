@@ -28,7 +28,10 @@ public class SearchLogsTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Search recent application logs (Kibana / Elasticsearch). Returns ERROR/WARN entries from the last poll window. Optional 'service' filter narrows to one service.";
+        return "Search application logs (Kibana / Elasticsearch) for ERROR/WARN/FATAL entries. "
+                + "Use 'sinceMinutes' to control how far back to look (default 60; use 1440 for "
+                + "the last day, 10080 for the last week). Optional 'service' filter narrows to "
+                + "one service by exact name. Returns matching log lines newest-first.";
     }
 
     @Override
@@ -36,21 +39,28 @@ public class SearchLogsTool implements AgentTool {
         return Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "service", Map.of("type", "string", "description", "service name to filter on"),
-                        "limit", Map.of("type", "integer", "minimum", 1, "maximum", 200)));
+                        "service", Map.of("type", "string", "description", "exact service name to filter on (optional)"),
+                        "sinceMinutes", Map.of("type", "integer", "minimum", 1, "maximum", 10080,
+                                "description", "how many minutes back to search (default 60)"),
+                        "limit", Map.of("type", "integer", "minimum", 1, "maximum", 200,
+                                "description", "max log lines to return (default 50)")));
     }
 
     @Override
     public ToolResult execute(Map<String, Object> args) {
         String service = args == null ? null : (String) args.get("service");
         int limit = parseInt(args, "limit", 50);
+        // Default to a 60-minute lookback — the ingestion poller's ~35s window
+        // is far too narrow for an interactive question like "what errors
+        // happened today?". The model can widen it via sinceMinutes.
+        int sinceMinutes = parseInt(args, "sinceMinutes", 60);
         try {
-            List<NormalizedEvent> all = elasticsearchConnector.fetchRecentErrorLogs();
+            List<NormalizedEvent> all =
+                    elasticsearchConnector.searchErrorLogs(sinceMinutes, service, Math.max(limit, 50));
             List<Map<String, Object>> rows = new ArrayList<>();
             List<AgentEvidence> evidence = new ArrayList<>();
             for (NormalizedEvent e : all) {
-                if (service != null && !service.isBlank()
-                        && !service.equalsIgnoreCase(e.serviceName())) continue;
+                // Service filter is applied server-side in searchErrorLogs now.
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("timestamp", e.timestamp().toString());
                 row.put("service", e.serviceName());

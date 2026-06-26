@@ -73,12 +73,21 @@ public class AgentOrchestrator {
                `finalize_answer` exactly once. Do not call any tools after that.
 
             Tool dispatch heuristic — when in doubt, this is the order:
-              vague question about state         → search_logs + query_metrics + correlate
-              "why is X failing"                 → search_logs(service=X) + get_traces(service=X)
-                                                 + get_runtime_metrics(service=X) + pod_status(service=X)
-              "how many incidents"               → query_database OR search_logs over incidents
+              "what is broken / open incidents"  → list_incidents (status=OPEN)
+              "show all incident detail"         → list_incidents (status=ALL)
+              vague question about state         → list_incidents + search_logs + query_metrics
+              "why is X failing"                 → list_incidents(service=X) + search_logs(service=X)
+                                                 + get_traces(service=X) + get_runtime_metrics(service=X)
+              "how many incidents"               → list_incidents
               "what's the latency on X"          → query_metrics + get_traces
               anything mentioning a runbook      → search_knowledge first
+
+            IMPORTANT about time windows: search_logs defaults to the last 60
+            minutes. If a search returns nothing, the events may be older — RETRY
+            with a wider sinceMinutes (e.g. 1440 for the last day, 10080 for the
+            week) before concluding "no errors found". Likewise, for incidents
+            ALWAYS prefer list_incidents over correlate — correlate only sees the
+            live 5-minute window and will look empty for anything older.
 
             Worked example — DO NOT echo this back, follow the pattern:
               User: "is the payments service in trouble?"
@@ -143,10 +152,13 @@ public class AgentOrchestrator {
         AgentMode mode = AgentMode.parse(properties.getAgent().getMode());
         List<AgentTool> active = activeTools(mode);
         List<ToolSpec> specs = buildToolSpecs(active);
-        log.info("[agent] ask session={} mode={} maxSteps={} historySize={} activeTools={} question='{}'",
-                sessionId, mode, properties.getAgent().getMaxSteps(),
-                history == null ? 0 : history.size(), active.size(),
-                truncate(question, 200));
+        log.info("[agent] ╔══════════════════════════════════════════════════════════════");
+        log.info("[agent] ║ QUESTION (session={}): {}", sessionId, question);
+        log.info("[agent] ║ mode={} model={} maxSteps={} historySize={} tools={}",
+                mode, properties.getAihub().getModel(), properties.getAgent().getMaxSteps(),
+                history == null ? 0 : history.size(),
+                active.stream().map(AgentTool::name).toList());
+        log.info("[agent] ╚══════════════════════════════════════════════════════════════");
 
         List<ChatMessage> messages = buildInitialMessages(question, history);
         List<Map<String, Object>> traceLog = new ArrayList<>();
@@ -226,10 +238,25 @@ public class AgentOrchestrator {
             return answer;
         } finally {
             long totalMs = (System.nanoTime() - startNs) / 1_000_000;
-            log.info("[agent] session={} DONE — steps={} totalMs={} tokens(in/out)={}/{} evidence={} error={}",
+            log.info("[agent] ╔══════════════════════════════════════════════════════════════");
+            log.info("[agent] ║ ANSWER (session={}) — {} step(s), {}ms, tokens in/out={}/{}",
                     sessionId, stepsTaken, totalMs,
-                    cumulativeUsage.inputTokens(), cumulativeUsage.outputTokens(),
-                    aggregatedEvidence.size(), error == null ? "none" : error);
+                    cumulativeUsage.inputTokens(), cumulativeUsage.outputTokens());
+            if (answer != null) {
+                log.info("[agent] ║ summary: {}", truncate(answer.summary(), 300));
+                if (answer.rootCause() != null) {
+                    log.info("[agent] ║ rootCause: {} (confidence={})",
+                            truncate(answer.rootCause().hypothesis(), 200),
+                            answer.rootCause().confidence());
+                }
+                log.info("[agent] ║ evidence items: {}  recommendedActions: {}",
+                        answer.evidence() == null ? 0 : answer.evidence().size(),
+                        answer.recommendedActions() == null ? 0 : answer.recommendedActions().size());
+            }
+            log.info("[agent] ║ tools called this run: {}",
+                    allCalls.stream().map(ToolCall::name).toList());
+            if (error != null) log.warn("[agent] ║ ERROR: {}", error);
+            log.info("[agent] ╚══════════════════════════════════════════════════════════════");
             auditService.record(sessionId, question, answer,
                     mode.name().toLowerCase(),
                     properties.getAihub().getModel(),
@@ -350,18 +377,33 @@ public class AgentOrchestrator {
             return ChatMessage.tool(call.id(), "{\"error\":\"unknown tool: " + call.name() + "\"}");
         }
         long startNs = System.nanoTime();
-        log.debug("[tool] → {} id={} args={}", call.name(), call.id(), call.args());
+        // Log the call + args at INFO so the IntelliJ console shows exactly what
+        // the model asked for (e.g. search_logs{service=payments, sinceMinutes=1440}).
+        log.info("[tool] ▶ CALL {} id={} args={}", call.name(), call.id(),
+                call.args() == null ? "{}" : call.args());
         try {
             AgentTool.ToolResult result = tool.execute(call.args() == null ? Map.of() : call.args());
             Object redactedPayload = redactor.redact(result.payload());
             if (result.evidence() != null) aggregatedEvidence.addAll(result.evidence());
             String json = toJson(redactedPayload);
-            log.info("[tool] ← {} id={} OK in {}ms — evidence+={}, payload={} chars",
-                    call.name(), call.id(), (System.nanoTime() - startNs) / 1_000_000,
-                    result.evidence() == null ? 0 : result.evidence().size(), json.length());
+            long ms = (System.nanoTime() - startNs) / 1_000_000;
+            int evidenceCount = result.evidence() == null ? 0 : result.evidence().size();
+
+            // Log a preview of what the tool actually returned so you can see
+            // WHY the model concluded what it did (empty result vs rich result).
+            log.info("[tool] ◀ RESULT {} id={} in {}ms — evidence+={}, {} chars\n         payload: {}",
+                    call.name(), call.id(), ms, evidenceCount, json.length(),
+                    truncate(json, 600));
+            // Each evidence item on its own line at DEBUG for deep dives.
+            if (log.isDebugEnabled() && result.evidence() != null) {
+                for (AgentEvidence ev : result.evidence()) {
+                    log.debug("[tool]     evidence: source={} ref={} excerpt={}",
+                            ev.source(), ev.ref(), truncate(ev.excerpt(), 120));
+                }
+            }
             return ChatMessage.tool(call.id(), json);
         } catch (Exception e) {
-            log.warn("[tool] ← {} id={} FAILED in {}ms: {}",
+            log.warn("[tool] ◀ FAILED {} id={} in {}ms: {}",
                     call.name(), call.id(), (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
             return ChatMessage.tool(call.id(),
                     "{\"error\":\"" + safeJson(e.getMessage()) + "\"}");
