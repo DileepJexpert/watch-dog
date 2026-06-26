@@ -55,10 +55,39 @@ public class OllamaLlmClient implements LlmClient {
                     parsed.toolCalls() == null ? 0 : parsed.toolCalls().size());
             return parsed;
         } catch (Exception e) {
-            log.error("[llm/ollama] FAILED in {}ms: {}",
-                    (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
-            throw new LlmException("Ollama call failed: " + e.getMessage(), e);
+            long ms = (System.nanoTime() - startNs) / 1_000_000;
+            String hint = diagnose(e, ms, String.valueOf(body.get("model")));
+            // Log just the message + hint, NOT the full reactor stack trace —
+            // it's 60 lines of Netty internals that bury the actual cause.
+            log.error("[llm/ollama] FAILED in {}ms: {} | {}", ms, e.getMessage(), hint);
+            throw new LlmException(hint, e);
         }
+    }
+
+    /**
+     * Turn an opaque Ollama failure into an actionable one-liner. The most
+     * common one on a laptop is a 500 after a long delay — that's Ollama
+     * running out of memory loading/running a big model while Docker eats RAM.
+     */
+    private String diagnose(Exception e, long ms, String model) {
+        String msg = e.getMessage() == null ? "" : e.getMessage();
+        if (msg.contains("500") && ms > 20_000) {
+            return "Ollama returned 500 after " + (ms / 1000) + "s — the model '" + model
+                    + "' likely ran out of memory (a 14B model needs ~10GB free; Docker + "
+                    + "the infra stack may be starving it). Switch to a smaller model "
+                    + "(llama3.1:8b) via the AI Copilot model dropdown, close other apps, "
+                    + "or set LLM_PROVIDER=anthropic with an API key.";
+        }
+        if (msg.contains("timeout") || msg.contains("ReadTimeout")) {
+            return "Ollama timed out after " + (ms / 1000) + "s — the model is too slow on "
+                    + "this hardware for the tool-calling prompt. Try llama3.1:8b or raise "
+                    + "LLM_TIMEOUT_MS.";
+        }
+        if (msg.contains("Connection refused") || msg.contains("ConnectException")) {
+            return "Cannot reach Ollama at " + properties.getAihub().getBaseUrl()
+                    + " — is `ollama serve` running? (`ollama list` to check)";
+        }
+        return "Ollama call failed: " + msg;
     }
 
     Map<String, Object> buildRequestBody(List<ChatMessage> messages, List<ToolSpec> tools, LlmOptions opts) {
@@ -71,6 +100,13 @@ public class OllamaLlmClient implements LlmClient {
         int maxTokens = opts != null && opts.maxTokens() != null
                 ? opts.maxTokens() : properties.getAihub().getMaxTokens();
         options.put("num_predict", maxTokens);
+        // Ollama defaults num_ctx to 2048 tokens. Our system prompt (hard rules
+        // + heuristics + worked example) plus ~12 tool JSON schemas easily
+        // exceeds that, which makes the model silently lose sight of the tools
+        // or the request error out. Give it a 8k window so the whole prompt
+        // fits. This raises memory use modestly but is essential for reliable
+        // tool calling.
+        options.put("num_ctx", 8192);
         if (opts != null && opts.temperature() != null) {
             options.put("temperature", opts.temperature());
         }

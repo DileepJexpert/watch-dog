@@ -152,13 +152,13 @@ public class AgentOrchestrator {
         AgentMode mode = AgentMode.parse(properties.getAgent().getMode());
         List<AgentTool> active = activeTools(mode);
         List<ToolSpec> specs = buildToolSpecs(active);
-        log.info("[agent] ╔══════════════════════════════════════════════════════════════");
-        log.info("[agent] ║ QUESTION (session={}): {}", sessionId, question);
-        log.info("[agent] ║ mode={} model={} maxSteps={} historySize={} tools={}",
+        log.info("[agent] ===============================================================");
+        log.info("[agent] | QUESTION (session={}): {}", sessionId, question);
+        log.info("[agent] | mode={} model={} maxSteps={} historySize={} tools={}",
                 mode, properties.getAihub().getModel(), properties.getAgent().getMaxSteps(),
                 history == null ? 0 : history.size(),
                 active.stream().map(AgentTool::name).toList());
-        log.info("[agent] ╚══════════════════════════════════════════════════════════════");
+        log.info("[agent] ===============================================================");
 
         List<ChatMessage> messages = buildInitialMessages(question, history);
         List<Map<String, Object>> traceLog = new ArrayList<>();
@@ -186,7 +186,7 @@ public class AgentOrchestrator {
                         callCount, response.usage().inputTokens(), response.usage().outputTokens());
                 if (log.isDebugEnabled() && callCount > 0) {
                     for (ToolCall tc : response.toolCalls()) {
-                        log.debug("[agent]   ↳ tool_call name={} id={} args={}",
+                        log.debug("[agent]   -> tool_call name={} id={} args={}",
                                 tc.name(), tc.id(), tc.args());
                     }
                 }
@@ -238,25 +238,25 @@ public class AgentOrchestrator {
             return answer;
         } finally {
             long totalMs = (System.nanoTime() - startNs) / 1_000_000;
-            log.info("[agent] ╔══════════════════════════════════════════════════════════════");
-            log.info("[agent] ║ ANSWER (session={}) — {} step(s), {}ms, tokens in/out={}/{}",
+            log.info("[agent] ===============================================================");
+            log.info("[agent] | ANSWER (session={}) - {} step(s), {}ms, tokens in/out={}/{}",
                     sessionId, stepsTaken, totalMs,
                     cumulativeUsage.inputTokens(), cumulativeUsage.outputTokens());
             if (answer != null) {
-                log.info("[agent] ║ summary: {}", truncate(answer.summary(), 300));
+                log.info("[agent] | summary: {}", truncate(answer.summary(), 300));
                 if (answer.rootCause() != null) {
-                    log.info("[agent] ║ rootCause: {} (confidence={})",
+                    log.info("[agent] | rootCause: {} (confidence={})",
                             truncate(answer.rootCause().hypothesis(), 200),
                             answer.rootCause().confidence());
                 }
-                log.info("[agent] ║ evidence items: {}  recommendedActions: {}",
+                log.info("[agent] | evidence items: {}  recommendedActions: {}",
                         answer.evidence() == null ? 0 : answer.evidence().size(),
                         answer.recommendedActions() == null ? 0 : answer.recommendedActions().size());
             }
-            log.info("[agent] ║ tools called this run: {}",
+            log.info("[agent] | tools called this run: {}",
                     allCalls.stream().map(ToolCall::name).toList());
-            if (error != null) log.warn("[agent] ║ ERROR: {}", error);
-            log.info("[agent] ╚══════════════════════════════════════════════════════════════");
+            if (error != null) log.warn("[agent] | ERROR: {}", error);
+            log.info("[agent] ===============================================================");
             auditService.record(sessionId, question, answer,
                     mode.name().toLowerCase(),
                     properties.getAihub().getModel(),
@@ -379,7 +379,7 @@ public class AgentOrchestrator {
         long startNs = System.nanoTime();
         // Log the call + args at INFO so the IntelliJ console shows exactly what
         // the model asked for (e.g. search_logs{service=payments, sinceMinutes=1440}).
-        log.info("[tool] ▶ CALL {} id={} args={}", call.name(), call.id(),
+        log.info("[tool] >> CALL {} id={} args={}", call.name(), call.id(),
                 call.args() == null ? "{}" : call.args());
         try {
             AgentTool.ToolResult result = tool.execute(call.args() == null ? Map.of() : call.args());
@@ -391,7 +391,7 @@ public class AgentOrchestrator {
 
             // Log a preview of what the tool actually returned so you can see
             // WHY the model concluded what it did (empty result vs rich result).
-            log.info("[tool] ◀ RESULT {} id={} in {}ms — evidence+={}, {} chars\n         payload: {}",
+            log.info("[tool] << RESULT {} id={} in {}ms — evidence+={}, {} chars\n         payload: {}",
                     call.name(), call.id(), ms, evidenceCount, json.length(),
                     truncate(json, 600));
             // Each evidence item on its own line at DEBUG for deep dives.
@@ -403,7 +403,7 @@ public class AgentOrchestrator {
             }
             return ChatMessage.tool(call.id(), json);
         } catch (Exception e) {
-            log.warn("[tool] ◀ FAILED {} id={} in {}ms: {}",
+            log.warn("[tool] << FAILED {} id={} in {}ms: {}",
                     call.name(), call.id(), (System.nanoTime() - startNs) / 1_000_000, e.getMessage());
             return ChatMessage.tool(call.id(),
                     "{\"error\":\"" + safeJson(e.getMessage()) + "\"}");
