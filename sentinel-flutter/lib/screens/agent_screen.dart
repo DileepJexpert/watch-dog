@@ -257,6 +257,15 @@ class _AgentScreenState extends State<AgentScreen> {
     _scrollToBottom();
   }
 
+  // Used by quick-start chips and follow-up chips so the conversation feels
+  // tap-driven rather than typing-driven. Each chip just stuffs the input
+  // controller and triggers _send().
+  Future<void> _sendQuickPrompt(String text) async {
+    if (_sending) return;
+    _inputCtl.text = text;
+    await _send();
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtl.hasClients) return;
@@ -297,10 +306,31 @@ class _AgentScreenState extends State<AgentScreen> {
               ),
               padding: const EdgeInsets.all(12),
               child: _turns.isEmpty
-                  ? const _EmptyState()
+                  ? _QuickStartChips(
+                      onTap: _sending ? null : _sendQuickPrompt,
+                    )
                   : ListView.separated(
                       controller: _scrollCtl,
-                      itemBuilder: (_, i) => _TurnView(turn: _turns[i]),
+                      itemBuilder: (_, i) {
+                        final turn = _turns[i];
+                        final isLastAssistant =
+                            i == _turns.length - 1 &&
+                                turn.role == AgentTurnRole.assistant &&
+                                turn.status == AgentTurnStatus.done;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _TurnView(turn: turn),
+                            if (isLastAssistant) ...[
+                              const SizedBox(height: 8),
+                              _FollowUpChips(
+                                turn: turn,
+                                onTap: _sending ? null : _sendQuickPrompt,
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemCount: _turns.length,
                     ),
@@ -536,19 +566,8 @@ class _DisabledView extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Ask anything.  e.g. "why is payments slow right now?"',
-        style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-      ),
-    );
-  }
-}
+// Note: the old _EmptyState() was replaced by _QuickStartChips at the bottom
+// of this file. Keep the input bar below.
 
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
@@ -886,6 +905,312 @@ class _EvidenceList extends StatelessWidget {
                   ),
                 ))
             .toList(),
+      ),
+    );
+  }
+}
+
+/// Quick-start prompts shown when the chat is empty. Tap any chip to fire
+/// that question through _send() so the conversational flow stays one-tap.
+class _QuickStartChips extends StatelessWidget {
+  final Future<void> Function(String)? onTap;
+  const _QuickStartChips({this.onTap});
+
+  static const _starters = <_StarterPrompt>[
+    _StarterPrompt(
+      icon: Icons.error_outline,
+      label: 'Show the last 5 errors',
+      prompt:
+          'List the 5 most recent ERROR-level log entries across all services, '
+          'grouped by service. Use search_logs.',
+    ),
+    _StarterPrompt(
+      icon: Icons.dashboard,
+      label: 'Are any services degraded?',
+      prompt:
+          'Query the sentinel database for service_health rows where status != GREEN. '
+          'List each with its active_incident_id and last_updated.',
+    ),
+    _StarterPrompt(
+      icon: Icons.warning_amber,
+      label: 'What is the most critical incident?',
+      prompt:
+          'Query the sentinel database for the highest-severity OPEN incident detected in the last hour. '
+          'Return its id, service_name, title, severity, and correlation_rule.',
+    ),
+    _StarterPrompt(
+      icon: Icons.speed,
+      label: 'Check latency on sample-producer',
+      prompt:
+          'Call query_metrics for sample-producer p95/p99 over the last 15 minutes, '
+          'and get_traces for any traces slower than 1s on that service.',
+    ),
+    _StarterPrompt(
+      icon: Icons.book,
+      label: 'Find runbook for connection pool issues',
+      prompt:
+          'Use search_knowledge to find runbooks about Hikari connection pool exhaustion. '
+          'Return the top 3 with their titles and key recommendations.',
+    ),
+    _StarterPrompt(
+      icon: Icons.timeline,
+      label: 'Summarise the last hour',
+      prompt:
+          'Summarise the last hour of platform activity. Query the sentinel db for '
+          'recent incidents, search_logs for new ERROR patterns, and detect_anomalies for '
+          'metric spikes. Cite numbers.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.smart_toy,
+                  color: Color(0xFF3B82F6), size: 56),
+              const SizedBox(height: 12),
+              const Text(
+                'Talk to SENTINEL',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Tap a prompt below, or type your own. '
+                'Follow-up questions remember the previous turn.',
+                style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: _starters
+                    .map((s) => _PromptChip(
+                          icon: s.icon,
+                          label: s.label,
+                          onTap: onTap == null ? null : () => onTap!(s.prompt),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Context-aware follow-up chips rendered below the most recent AI answer.
+/// Pulls a service hint out of the answer summary so "drill into <service>"
+/// chips have a real target where possible.
+class _FollowUpChips extends StatelessWidget {
+  final AgentChatTurn turn;
+  final Future<void> Function(String)? onTap;
+
+  const _FollowUpChips({required this.turn, this.onTap});
+
+  /// Very lightweight service-name extraction — finds the first
+  /// kebab/lowercase-with-dashes token that looks like a service identifier.
+  /// Works for "sample-producer", "payments-svc", "my-spring-boot-app".
+  static final _serviceRe = RegExp(r'\b([a-z][a-z0-9]*(?:-[a-z0-9]+){1,3})\b');
+
+  String? _serviceHint() {
+    final src = turn.answer?.summary ?? turn.text;
+    if (src.isEmpty) return null;
+    final m = _serviceRe.firstMatch(src.toLowerCase());
+    if (m == null) return null;
+    final candidate = m.group(1)!;
+    // Filter obvious false positives.
+    const noise = {'show-evidence', 'last-hour', 'no-issues', 'p1-critical',
+        'p2-high', 'p3-medium', 'p4-info', 'sentinel-backend',
+        'host-docker-internal', 'http-server', 'service-down',
+        'connection-pool', 'http-error'};
+    if (noise.contains(candidate)) return null;
+    return candidate;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = _serviceHint();
+    final chips = <_FollowUpPrompt>[
+      _FollowUpPrompt(
+        icon: Icons.zoom_in,
+        label: 'Drill deeper',
+        prompt: svc != null
+            ? 'Drill deeper on $svc — pull the last 50 ERROR logs, the slowest '
+              '10 traces, and runtime CPU/memory. What stands out?'
+            : 'Drill deeper on the previous findings — get more log lines, '
+              'slow traces, and runtime metrics. What stands out?',
+      ),
+      _FollowUpPrompt(
+        icon: Icons.description,
+        label: 'Fetch more logs from Kibana',
+        prompt: svc != null
+            ? 'Call search_logs for service=$svc with a wider time window '
+              '(last 30 min). Return the top error signatures and counts.'
+            : 'Call search_logs with a wider time window (last 30 min) for the '
+              'services in your previous answer. Return top error signatures.',
+      ),
+      _FollowUpPrompt(
+        icon: Icons.show_chart,
+        label: 'Check Grafana metrics',
+        prompt: svc != null
+            ? 'Call query_metrics for $svc: request rate, p95 latency, error '
+              'rate, CPU and memory over the last 30 minutes. Highlight anomalies.'
+            : 'Call query_metrics for the affected services: request rate, p95 '
+              'latency, error rate, CPU/memory over the last 30 minutes.',
+      ),
+      _FollowUpPrompt(
+        icon: Icons.account_tree,
+        label: 'Look at Jaeger traces',
+        prompt: svc != null
+            ? 'Call get_traces for $svc filtered by slowTraceThresholdMs. '
+              'Pick the 3 slowest and explain where time is spent.'
+            : 'Call get_traces for the affected services. Pick the 3 slowest '
+              'and explain where time is spent.',
+      ),
+      _FollowUpPrompt(
+        icon: Icons.book_outlined,
+        label: 'Find related runbook',
+        prompt:
+            'Call search_knowledge for runbooks matching the root cause in your '
+            'previous answer. Return the top 2 with key recommendations.',
+      ),
+      _FollowUpPrompt(
+        icon: Icons.refresh,
+        label: 'Try a different angle',
+        prompt: 'You may have missed something. Re-investigate using different '
+            'tools than before — what could explain this from a different angle?',
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Follow up',
+            style: TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: chips
+                .map((c) => _PromptChip(
+                      icon: c.icon,
+                      label: c.label,
+                      compact: true,
+                      onTap: onTap == null ? null : () => onTap!(c.prompt),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StarterPrompt {
+  final IconData icon;
+  final String label;
+  final String prompt;
+  const _StarterPrompt({
+    required this.icon,
+    required this.label,
+    required this.prompt,
+  });
+}
+
+class _FollowUpPrompt {
+  final IconData icon;
+  final String label;
+  final String prompt;
+  const _FollowUpPrompt({
+    required this.icon,
+    required this.label,
+    required this.prompt,
+  });
+}
+
+class _PromptChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool compact;
+
+  const _PromptChip({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 10 : 14,
+            vertical: compact ? 6 : 10,
+          ),
+          decoration: BoxDecoration(
+            color: disabled
+                ? const Color(0xFF111827)
+                : const Color(0xFF1F2937),
+            border: Border.all(
+              color: disabled
+                  ? const Color(0xFF1F2937)
+                  : const Color(0xFF374151),
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: compact ? 13 : 15,
+                color: disabled
+                    ? const Color(0xFF374151)
+                    : const Color(0xFF60A5FA),
+              ),
+              SizedBox(width: compact ? 5 : 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: disabled
+                      ? const Color(0xFF374151)
+                      : const Color(0xFFE5E7EB),
+                  fontSize: compact ? 11 : 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
