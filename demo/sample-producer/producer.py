@@ -59,13 +59,56 @@ WITH_METRICS = os.environ.get("WITH_METRICS", "true").lower() == "true"
 
 SCENARIOS = [
     # (weight, level, message, error_type)
-    (5, "INFO",  "Request /api/healthy completed in 8ms",                              None),
-    (4, "ERROR", "Synthetic failure: payment authorization rejected",                  "RuntimeException"),
-    (3, "ERROR", "HikariPool-1 - Connection is not available, request timed out",      "java.sql.SQLException"),
-    (2, "WARN",  "Slow downstream call to inventory-svc took 1842ms",                  None),
-    (2, "ERROR", "OutOfMemoryError: Java heap space",                                  "java.lang.OutOfMemoryError"),
-    (1, "ERROR", "java.net.SocketTimeoutException: Read timed out after 30000ms",      "java.net.SocketTimeoutException"),
+    # ── Healthy / informational ─────────────────────────────────────────────
+    (5, "INFO",  "POST /api/accounts succeeded for customer C-{cust} in 87ms",          None),
+    (4, "INFO",  "Loan application LA-{loan} approved for customer C-{cust}",            None),
+    (3, "INFO",  "Payment PAY-{pay} settled, amount=INR {amt}",                          None),
+
+    # ── Business-domain failures ─────────────────────────────────────────────
+    (4, "ERROR", "Account creation failed: KYC document upload timeout for customer C-{cust}",
+                                                                                          "BusinessException"),
+    (4, "ERROR", "Loan disbursement failed: insufficient funds in source account "
+                  "for application LA-{loan}, requested INR {amt}",                       "InsufficientFundsException"),
+    (3, "ERROR", "Payment authorization rejected by card issuer: card ending {card}, "
+                  "amount INR {amt}",                                                     "PaymentDeclinedException"),
+    (3, "ERROR", "Customer KYC update failed: PAN verification service returned HTTP 504 "
+                  "for customer C-{cust}",                                                "ExternalServiceException"),
+    (2, "ERROR", "Money transfer failed: beneficiary account A-{acct} is frozen, "
+                  "transaction TXN-{txn}",                                                "AccountFrozenException"),
+    (2, "ERROR", "Card block request failed: OTP expired for cardholder C-{cust}, "
+                  "card ending {card}",                                                   "OtpExpiredException"),
+    (2, "ERROR", "Fraud check rejected transaction TXN-{txn}: velocity rule "
+                  "FR-VLT-04 triggered (5+ txn in 60s)",                                  "FraudCheckException"),
+
+    # ── Infrastructure failures (so DB / OOM / connectivity rules still fire) ─
+    (3, "ERROR", "HikariPool-1 - Connection is not available, request timed out after "
+                  "30000ms, active=20, idle=0, waiting=12",                               "java.sql.SQLException"),
+    (2, "ERROR", "JdbcSQLException: Cannot get a connection — pool exhausted while "
+                  "processing PAY-{pay}",                                                 "org.h2.jdbc.JdbcSQLException"),
+    (1, "ERROR", "OutOfMemoryError: Java heap space — during settlement batch run",       "java.lang.OutOfMemoryError"),
+    (1, "ERROR", "java.net.SocketTimeoutException: Read timed out after 30000ms "
+                  "calling core-banking-api",                                             "java.net.SocketTimeoutException"),
+
+    # ── Warnings (drive LATENCY_DEGRADATION) ─────────────────────────────────
+    (2, "WARN",  "Slow downstream call to fraud-check-svc took 1842ms for TXN-{txn}",     None),
+    (2, "WARN",  "Slow query in CustomerRepository.findByPan took 1235ms",                None),
 ]
+
+
+# Cheap deterministic-enough placeholders so each event has plausible IDs.
+# Not crypto random — just enough variation that the logs read like real ones.
+def _interpolate(template: str) -> str:
+    if "{" not in template:
+        return template
+    return template.format(
+        cust = f"{random.randint(10_000, 99_999)}",
+        loan = f"{random.randint(100, 999)}{random.choice('ABCDEF')}",
+        pay  = f"{random.randint(100_000, 999_999)}",
+        amt  = f"{random.randint(1_000, 500_000):,}",
+        card = f"{random.randint(1000, 9999)}",
+        acct = f"{random.randint(70_000, 99_999)}",
+        txn  = f"T{random.randint(100_000_000, 999_999_999)}",
+    )
 
 # --------------------------------------------------------------------------- #
 # Counters (shared between producer + metrics server)
@@ -274,7 +317,10 @@ def main() -> int:
 
     try:
         while not stop.is_set():
-            _, level, message, error_type = _weighted_choice()
+            _, level, message_template, error_type = _weighted_choice()
+            # Render placeholders ({cust}, {loan}, ...) so each log line looks like
+            # a distinct real-world event instead of a copy of the template.
+            message = _interpolate(message_template)
             _inc("events_total")
             _inc("requests_by_level", sub=level)
 
